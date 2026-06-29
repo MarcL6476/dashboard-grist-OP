@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rapport d'opération</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --paper:#F1ECDD;
+    --card:#E8E0CB;
+    --ink:#2B3430;
+    --ink-soft:#5B6259;
+    --sienna:#BD5B36;
+    --slate:#4C6B7A;
+    --sage:#7C8F6B;
+    --ochre:#C99A3D;
+    --line:#D9CBA8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin:0; padding:0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  .mono { font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace; }
+
+  #app { padding: 14px 16px 18px; min-height: 100vh; }
+
+  header.fiche {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+  }
+  header.fiche .ref {
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  header.fiche h1 {
+    margin: 2px 0 0;
+    font-size: 19px;
+    font-weight: 650;
+  }
+  header.fiche .sub {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 10px 12px 6px;
+  }
+  .card h2 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .card .chart-box { position: relative; height: 170px; }
+  .card .note {
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-top: 6px;
+  }
+
+  #empty {
+    text-align: center;
+    padding: 48px 12px;
+    color: var(--ink-soft);
+    font-size: 13px;
+  }
+  #empty .mono { display:block; margin-top: 6px; font-size: 11px; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="fiche" id="header">
+    <div class="ref mono" id="refLine">RÉF. — </div>
+    <h1 id="titre">Sélectionnez une ligne</h1>
+    <div class="sub" id="sousTitre"></div>
+  </header>
+
+  <div class="grid" id="grid">
+    <section class="card">
+      <h2>Indicateurs de l'opération</h2>
+      <div class="chart-box"><canvas id="chartIndicateurs"></canvas></div>
+      <div class="note" id="noteIndicateurs"></div>
+    </section>
+
+    <section class="card">
+      <h2>Vs. moyenne de l'ensemble</h2>
+      <div class="chart-box"><canvas id="chartComparaison"></canvas></div>
+      <div class="note" id="noteComparaison"></div>
+    </section>
+
+    <section class="card">
+      <h2>Répartition par statut</h2>
+      <div class="chart-box"><canvas id="chartRepartition"></canvas></div>
+      <div class="note" id="noteRepartition"></div>
+    </section>
+  </div>
+
+  <div id="empty" class="hidden">
+    Aucune ligne sélectionnée.
+    <span class="mono">Cliquez une ligne dans le tableau lié à ce widget.</span>
+  </div>
+
+</div>
+
+<script>
+/* ---------------------------------------------------------------
+   1) Colonnes attendues par le widget.
+   À mapper dans Grist : clic sur les 3 points du widget
+   > "Sélectionner les colonnes source" (panneau de droite).
+   Renommez / adaptez librement les colonnes côté Grist : le widget
+   ne dépend pas des noms réels de vos colonnes.
+   --------------------------------------------------------------- */
+grist.ready({
+  columns: [
+    { name: 'Libelle',            title: 'Libellé (ex : commune + opération)',  type: 'Text',    optional: true },
+    { name: 'Reference',          title: 'Référence (ex : n° de parcelle)',     type: 'Text',    optional: true },
+    { name: 'Statut',             title: 'Statut / catégorie',                  type: 'Text',    optional: true },
+    { name: 'MetriquePrincipale', title: 'Métrique principale (comparaison)',   type: 'Numeric', optional: true },
+    { name: 'Indicateurs',        title: 'Indicateurs numériques (budget, surface, nb logements…)',
+      type: 'Numeric', allowMultiple: true },
+  ],
+  requiredAccess: 'read table',
+});
+
+const PALETTE = ['#BD5B36', '#4C6B7A', '#7C8F6B', '#C99A3D', '#8C6A8F', '#5B6259'];
+
+let allRows = [];     // toutes les lignes de la table (moyennes / répartitions)
+let selected = null;  // ligne actuellement sélectionnée (déjà "mappée")
+const charts = {};
+
+function destroy(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+function prettify(colId) {
+  return String(colId || '').replace(/_/g, ' ');
+}
+
+/* ---------------------------------------------------------------
+   2) Toutes les lignes de la table à laquelle le widget est attaché.
+   Sert aux calculs de moyenne et de répartition.
+   --------------------------------------------------------------- */
+grist.onRecords((records) => {
+  allRows = records.map((r) => grist.mapColumnNames(r)).filter(Boolean);
+  renderComparaison();
+  renderRepartition();
+});
+
+/* ---------------------------------------------------------------
+   3) La ligne sélectionnée (curseur lié via "Select by" à votre
+   tableau principal). C'est ce qui fait "changer" le rapport
+   quand vous cliquez une autre ligne.
+   --------------------------------------------------------------- */
+grist.onRecord((record, mappings) => {
+  const mapped = grist.mapColumnNames(record);
+  if (!mapped) { showEmpty(); return; }
+  selected = mapped;
+  hideEmpty();
+
+  document.getElementById('refLine').textContent = 'RÉF. — ' + (mapped.Reference || '—');
+  document.getElementById('titre').textContent = mapped.Libelle || 'Opération';
+  document.getElementById('sousTitre').textContent = mapped.Statut ? 'Statut : ' + mapped.Statut : '';
+
+  renderIndicateurs(mapped, mappings);
+  renderComparaison();
+  renderRepartition();
+});
+
+function showEmpty() {
+  document.getElementById('grid').classList.add('hidden');
+  document.getElementById('header').classList.add('hidden');
+  document.getElementById('empty').classList.remove('hidden');
+  selected = null;
+}
+function hideEmpty() {
+  document.getElementById('grid').classList.remove('hidden');
+  document.getElementById('header').classList.remove('hidden');
+  document.getElementById('empty').classList.add('hidden');
+}
+
+function commonOptions() {
+  return { responsive: true, maintainAspectRatio: false, animation: { duration: 250 } };
+}
+
+/* ---------------- Graphique 1 — indicateurs de la ligne sélectionnée ---------------- */
+function renderIndicateurs(mapped, mappings) {
+  const note = document.getElementById('noteIndicateurs');
+  const values = Array.isArray(mapped.Indicateurs) ? mapped.Indicateurs : [];
+  const colIds = Array.isArray(mappings && mappings.Indicateurs) ? mappings.Indicateurs : [];
+
+  if (!values.length) {
+    note.textContent = 'Mappez une ou plusieurs colonnes numériques dans "Indicateurs".';
+    destroy('indicateurs');
+    return;
+  }
+  note.textContent = '';
+  const labels = colIds.length === values.length ? colIds.map(prettify) : values.map((_, i) => 'Ind. ' + (i + 1));
+
+  destroy('indicateurs');
+  charts.indicateurs = new Chart(document.getElementById('chartIndicateurs'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data: values, backgroundColor: PALETTE[1], borderRadius: 3 }] },
+    options: { ...commonOptions(), plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+  });
+}
+
+/* ---------------- Graphique 2 — sélection vs moyenne de toutes les lignes ---------------- */
+function renderComparaison() {
+  const note = document.getElementById('noteComparaison');
+  if (!selected) { destroy('comparaison'); return; }
+
+  const valeursValides = allRows.map((r) => r.MetriquePrincipale).filter((v) => typeof v === 'number');
+
+  if (typeof selected.MetriquePrincipale !== 'number' || !valeursValides.length) {
+    note.textContent = 'Mappez la colonne "Métrique principale" pour activer la comparaison.';
+    destroy('comparaison');
+    return;
+  }
+  note.textContent = '';
+  const moyenne = valeursValides.reduce((a, b) => a + b, 0) / valeursValides.length;
+
+  destroy('comparaison');
+  charts.comparaison = new Chart(document.getElementById('chartComparaison'), {
+    type: 'bar',
+    data: {
+      labels: ['Cette opération', 'Moyenne (toutes lignes)'],
+      datasets: [{
+        data: [selected.MetriquePrincipale, Math.round(moyenne * 100) / 100],
+        backgroundColor: [PALETTE[0], PALETTE[5]],
+        borderRadius: 3,
+      }],
+    },
+    options: { ...commonOptions(), plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+  });
+}
+
+/* ---------------- Graphique 3 — répartition par statut, sélection mise en valeur ---------------- */
+function renderRepartition() {
+  const note = document.getElementById('noteRepartition');
+  const counts = {};
+  allRows.forEach((r) => {
+    const s = r.Statut || 'Non renseigné';
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  const labels = Object.keys(counts);
+  if (!labels.length) {
+    note.textContent = 'Mappez la colonne "Statut" pour activer la répartition.';
+    destroy('repartition');
+    return;
+  }
+  note.textContent = '';
+  const data = labels.map((l) => counts[l]);
+  const borders = labels.map((l) => (selected && l === (selected.Statut || 'Non renseigné') ? '#2B3430' : 'transparent'));
+
+  destroy('repartition');
+  charts.repartition = new Chart(document.getElementById('chartRepartition'), {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: labels.map((_, i) => PALETTE[i % PALETTE.length]),
+        borderColor: borders,
+        borderWidth: 3,
+      }],
+    },
+    options: { ...commonOptions(), cutout: '55%', plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } },
+  });
+}
+</script>
+</body>
+</html>
