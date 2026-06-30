@@ -88,7 +88,7 @@
 <div id="app">
 
   <header class="fiche" id="header">
-    <div class="ref mono" id="refLine">RÉF. — </div>
+    <div class="ref mono" id="majLine">Dernière mise à jour — </div>
     <h1 id="titre">Sélectionnez une ligne</h1>
   </header>
 
@@ -126,8 +126,8 @@ if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
    --------------------------------------------------------------- */
 grist.ready({
   columns: [
-    { name: 'Libelle',   title: 'Libellé (ex : commune + opération)', type: 'Text', optional: true },
-    { name: 'Reference', title: 'Référence (ex : n° de parcelle / commune)', type: 'Text', optional: true },
+    { name: 'Libelle',      title: 'Libellé (ex : commune + opération)', type: 'Text', optional: true },
+    { name: 'DerniereMaJ',  title: 'Date de dernière mise à jour', type: 'DateTime', optional: true },
 
     { name: 'Indicateurs', title: 'Logements : total en cours + les 4 colonnes "dont logements"',
       type: 'Numeric', allowMultiple: true },
@@ -150,7 +150,11 @@ grist.onRecord((record, mappings) => {
   if (!mapped) { showEmpty(); return; }
   hideEmpty();
 
-  document.getElementById('refLine').textContent = 'RÉF. — ' + (mapped.Reference || '—');
+  const maj = mapped.DerniereMaJ;
+  const majTxt = typeof maj === 'number'
+    ? new Date(maj * 1000).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+    : '—';
+  document.getElementById('majLine').textContent = 'Dernière mise à jour — ' + majTxt;
   document.getElementById('titre').textContent = mapped.Libelle || 'Opération';
 
   renderIndicateurs(mapped, mappings);
