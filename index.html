@@ -46,6 +46,25 @@
     font-size: 19px;
     font-weight: 650;
   }
+  .badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink-soft);
+  }
+  .badge.on {
+    background: var(--sage);
+    border-color: var(--sage);
+    color: #fff;
+  }
 
   .grid {
     display: grid;
@@ -89,6 +108,7 @@
 
   <header class="fiche" id="header">
     <div class="ref mono" id="majLine">Dernière mise à jour — </div>
+    <div class="badges" id="badges"></div>
     <h1 id="titre">Sélectionnez une ligne</h1>
   </header>
 
@@ -128,6 +148,9 @@ grist.ready({
   columns: [
     { name: 'Libelle',      title: 'Libellé (ex : commune + opération)', type: 'Text', optional: true },
     { name: 'DerniereMaJ',  title: 'Date de dernière mise à jour', type: 'DateTime', optional: true },
+    { name: 'FondFriche',   title: 'Fond friche', type: 'Any', optional: true },
+    { name: 'AMB',          title: 'AMB', type: 'Any', optional: true },
+    { name: 'TEL',          title: 'TEL', type: 'Any', optional: true },
 
     { name: 'Indicateurs', title: 'Logements : total en cours + les 4 colonnes "dont logements"',
       type: 'Numeric', allowMultiple: true },
@@ -156,10 +179,30 @@ grist.onRecord((record, mappings) => {
     : '—';
   document.getElementById('majLine').textContent = 'Dernière mise à jour — ' + majTxt;
   document.getElementById('titre').textContent = mapped.Libelle || 'Opération';
+  renderBadges(mapped);
 
   renderIndicateurs(mapped, mappings);
   renderBlocage(mapped, mappings);
 });
+
+function isTruthy(v) {
+  if (v === true) return true;
+  if (typeof v === 'number') return v !== 0;
+  if (typeof v === 'string') return ['oui', 'true', 'x', '1', 'yes'].includes(v.trim().toLowerCase());
+  return false;
+}
+
+function renderBadges(mapped) {
+  const items = [
+    { label: 'Fond friche', val: mapped.FondFriche },
+    { label: 'AMB', val: mapped.AMB },
+    { label: 'TEL', val: mapped.TEL },
+  ];
+  const el = document.getElementById('badges');
+  el.innerHTML = items
+    .map((i) => `<span class="badge ${isTruthy(i.val) ? 'on' : ''}">${i.label}</span>`)
+    .join('');
+}
 
 function showEmpty() {
   document.getElementById('grid').classList.add('hidden');
