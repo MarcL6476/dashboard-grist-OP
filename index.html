@@ -48,8 +48,9 @@
   }
   .badges {
     display: flex;
-    gap: 6px;
-    margin-top: 6px;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
   }
   .badge {
     font-size: 11px;
@@ -108,7 +109,6 @@
 
   <header class="fiche" id="header">
     <div class="ref mono" id="majLine">Dernière mise à jour — </div>
-    <div class="badges" id="badges"></div>
     <h1 id="titre">Sélectionnez une ligne</h1>
   </header>
 
@@ -121,10 +121,13 @@
 
     <section class="card">
       <h2>L'état de blocage des logements en cours</h2>
+      <div class="note" id="noteNbOps" style="margin-top:0;margin-bottom:6px;font-weight:600;color:var(--ink);"></div>
       <div class="chart-box"><canvas id="chartBlocage"></canvas></div>
       <div class="note" id="noteBlocage"></div>
     </section>
   </div>
+
+  <div class="badges" id="badges"></div>
 
   <div id="empty" class="hidden">
     Aucune ligne sélectionnée.
@@ -148,6 +151,7 @@ grist.ready({
   columns: [
     { name: 'Libelle',      title: 'Libellé (ex : commune + opération)', type: 'Text', optional: true },
     { name: 'DerniereMaJ',  title: 'Date de dernière mise à jour', type: 'DateTime', optional: true },
+    { name: 'NbOperations', title: "Nombre d'opérations en cours", type: 'Numeric', optional: true },
     { name: 'FondFriche',   title: 'Fond friche', type: 'Any', optional: true },
     { name: 'AMB',          title: 'AMB', type: 'Any', optional: true },
     { name: 'TEL',          title: 'TEL', type: 'Any', optional: true },
@@ -176,12 +180,12 @@ grist.onRecord((record, mappings) => {
   const maj = mapped.DerniereMaJ;
   let majTxt = '—';
   if (typeof maj === 'number') {
-    majTxt = new Date(maj * 1000).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    majTxt = new Date(maj * 1000).toLocaleDateString('fr-FR');
   } else if (maj instanceof Date) {
-    majTxt = maj.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    majTxt = maj.toLocaleDateString('fr-FR');
   } else if (typeof maj === 'string' && maj.trim()) {
     const d = new Date(maj);
-    majTxt = isNaN(d) ? maj : d.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    majTxt = isNaN(d) ? maj : d.toLocaleDateString('fr-FR');
   }
   document.getElementById('majLine').textContent = 'Dernière mise à jour — ' + majTxt;
   document.getElementById('titre').textContent = mapped.Libelle || 'Opération';
@@ -189,6 +193,7 @@ grist.onRecord((record, mappings) => {
 
   renderIndicateurs(mapped, mappings);
   renderBlocage(mapped, mappings);
+  renderNbOps(mapped);
 });
 
 function isTruthy(v) {
@@ -211,10 +216,18 @@ function renderBadges(mapped) {
 }
 
 function formatVal(v) {
-  if (typeof v === 'number') return v;
+  if (typeof v === 'number') return v.toLocaleString('fr-FR') + ' €';
   if (v === true) return 'oui';
-  if (v === false || v == null) return 0;
+  if (v === false || v == null) return '0 €';
   return v;
+}
+
+function renderNbOps(mapped) {
+  const el = document.getElementById('noteNbOps');
+  const n = mapped.NbOperations;
+  el.textContent = typeof n === 'number'
+    ? n.toLocaleString('fr-FR') + " opération" + (n > 1 ? 's' : '') + " en cours"
+    : '';
 }
 
 function showEmpty() {
