@@ -174,9 +174,15 @@ grist.onRecord((record, mappings) => {
   hideEmpty();
 
   const maj = mapped.DerniereMaJ;
-  const majTxt = typeof maj === 'number'
-    ? new Date(maj * 1000).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
-    : '—';
+  let majTxt = '—';
+  if (typeof maj === 'number') {
+    majTxt = new Date(maj * 1000).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  } else if (maj instanceof Date) {
+    majTxt = maj.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  } else if (typeof maj === 'string' && maj.trim()) {
+    const d = new Date(maj);
+    majTxt = isNaN(d) ? maj : d.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  }
   document.getElementById('majLine').textContent = 'Dernière mise à jour — ' + majTxt;
   document.getElementById('titre').textContent = mapped.Libelle || 'Opération';
   renderBadges(mapped);
@@ -200,8 +206,15 @@ function renderBadges(mapped) {
   ];
   const el = document.getElementById('badges');
   el.innerHTML = items
-    .map((i) => `<span class="badge ${isTruthy(i.val) ? 'on' : ''}">${i.label}</span>`)
+    .map((i) => `<span class="badge ${isTruthy(i.val) ? 'on' : ''}">${i.label} : ${formatVal(i.val)}</span>`)
     .join('');
+}
+
+function formatVal(v) {
+  if (typeof v === 'number') return v;
+  if (v === true) return 'oui';
+  if (v === false || v == null) return 0;
+  return v;
 }
 
 function showEmpty() {
