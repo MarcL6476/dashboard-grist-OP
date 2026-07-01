@@ -93,8 +93,10 @@ grist.ready({
     { name: 'Libelle',          title: 'Libellé (commune + opération)',                   type: 'Text',    optional: true },
     { name: 'DerniereMaJ',      title: 'Date de dernière mise à jour',                    type: 'DateTime',optional: true },
     { name: 'NbOperations',     title: "Nombre d'opérations en cours",                    type: 'Numeric', optional: true },
-    { name: 'AnneesLivraison',  title: 'Années prévisionnelles de livraison (liste)',      type: 'Any',     optional: true },
-    { name: 'AnneesLancement',  title: 'Années prévisionnelles de lancement travaux (liste)', type: 'Any', optional: true },
+    { name: 'AnneesLivraison',    title: 'Années prévisionnelles de livraison (liste)',         type: 'Any', optional: true },
+    { name: 'AnneesLancement',    title: 'Années prévisionnelles de lancement travaux (liste)',  type: 'Any', optional: true },
+    { name: 'LogementsLivraison', title: 'Logements par année de livraison (liste)',             type: 'Any', optional: true },
+    { name: 'LogementsLancement', title: 'Logements par année de lancement (liste)',             type: 'Any', optional: true },
     { name: 'FondFriche',       title: 'Fond friche (€)',                                 type: 'Any',     optional: true },
     { name: 'AMB',              title: 'AMB (€)',                                         type: 'Any',     optional: true },
     { name: 'TEL',              title: 'TEL (€)',                                         type: 'Any',     optional: true },
@@ -115,7 +117,10 @@ const PALETTE_PIE = ['#7CB342','#AED581','#FB8C00','#E53935','#FFEB3B','#64B5F6'
 const charts = {};
 
 function destroy(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
-function prettify(c) { return String(c||'').replace(/_/g,' '); }
+function prettify(c) {
+  try { return decodeURIComponent(String(c||'').replace(/_/g,' ')); }
+  catch(e) { return String(c||'').replace(/_/g,' '); }
+}
 
 function formatDate(v) {
   if (typeof v === 'number') return new Date(v*1000).toLocaleDateString('fr-FR');
@@ -177,26 +182,29 @@ function renderNbOps(m) {
 }
 
 /* ---- Tableau années ---- */
-function countByYear(list) {
-  const c = {};
-  (Array.isArray(list)?list:[]).forEach(v=>{
-    if (v==null||v==='') return;
-    const y=String(v); c[y]=(c[y]||0)+1;
+function sumLogsByYear(years, logs) {
+  const s = {};
+  const yList = Array.isArray(years) ? years : [];
+  const lList = Array.isArray(logs)  ? logs  : [];
+  yList.forEach((y, i) => {
+    if (y == null || y === '') return;
+    const k = String(y);
+    s[k] = (s[k] || 0) + (Number(lList[i]) || 0);
   });
-  return c;
+  return s;
 }
 
 function renderTableauAnnees(m) {
   const el  = document.getElementById('tableauAnnees');
-  const liv = countByYear(m.AnneesLivraison);
-  const lan = countByYear(m.AnneesLancement);
+  const liv = sumLogsByYear(m.AnneesLivraison,  m.LogementsLivraison);
+  const lan = sumLogsByYear(m.AnneesLancement,  m.LogementsLancement);
   const years = [...new Set([...Object.keys(liv),...Object.keys(lan)])].sort();
   if (!years.length) { el.innerHTML=''; return; }
   const rows = years.map(y=>`
     <tr>
       <td>${y}</td>
-      <td>${lan[y]||0}</td>
-      <td>${liv[y]||0}</td>
+      <td>${lan[y] || 0}</td>
+      <td>${liv[y] || 0}</td>
     </tr>`).join('');
   el.innerHTML = `
     <table class="tbl">
