@@ -182,30 +182,35 @@ function renderNbOps(m) {
 }
 
 /* ---- Tableau années ---- */
-function sumLogsByYear(years, logs) {
-  const s = {};
-  const yList = Array.isArray(years) ? years : [];
-  const lList = Array.isArray(logs)  ? logs  : [];
-  yList.forEach((y, i) => {
-    if (y == null || y === '') return;
-    const k = String(y);
-    s[k] = (s[k] || 0) + (Number(lList[i]) || 0);
-  });
-  return s;
-}
-
 function renderTableauAnnees(m) {
   const el  = document.getElementById('tableauAnnees');
-  const liv = sumLogsByYear(m.AnneesLivraison,  m.LogementsLivraison);
-  const lan = sumLogsByYear(m.AnneesLancement,  m.LogementsLancement);
-  const years = [...new Set([...Object.keys(liv),...Object.keys(lan)])].sort();
+
+  // Zip années + logements pour sommer
+  function buildData(years, logs) {
+    const ops = {}, lgs = {};
+    const yList = Array.isArray(years) ? years : [];
+    const lList = Array.isArray(logs)  ? logs  : [];
+    yList.forEach((y, i) => {
+      if (y == null || y === '') return;
+      const k = String(y);
+      ops[k] = (ops[k] || 0) + 1;
+      lgs[k] = (lgs[k] || 0) + (Number(lList[i]) || 0);
+    });
+    return { ops, lgs };
+  }
+
+  const lan = buildData(m.AnneesLancement,  m.LogementsLancement);
+  const liv = buildData(m.AnneesLivraison,  m.LogementsLivraison);
+  const years = [...new Set([...Object.keys(lan.ops),...Object.keys(liv.ops)])].sort();
   if (!years.length) { el.innerHTML=''; return; }
+
   const rows = years.map(y=>`
     <tr>
       <td>${y}</td>
-      <td>${lan[y] || 0}</td>
-      <td>${liv[y] || 0}</td>
+      <td>${lan.ops[y]||0} op. / ${lan.lgs[y]||0} log.</td>
+      <td>${liv.ops[y]||0} op. / ${liv.lgs[y]||0} log.</td>
     </tr>`).join('');
+
   el.innerHTML = `
     <table class="tbl">
       <thead><tr>
