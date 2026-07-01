@@ -127,6 +127,7 @@
     </section>
   </div>
 
+  <div id="tableauAnnees" style="margin-top:12px;"></div>
   <div class="badges" id="badges"></div>
 
   <div id="empty" class="hidden">
@@ -151,7 +152,9 @@ grist.ready({
   columns: [
     { name: 'Libelle',      title: 'Libellé (ex : commune + opération)', type: 'Text', optional: true },
     { name: 'DerniereMaJ',  title: 'Date de dernière mise à jour', type: 'DateTime', optional: true },
-    { name: 'NbOperations', title: "Nombre d'opérations en cours", type: 'Numeric', optional: true },
+    { name: 'NbOperations',   title: "Nombre d'opérations en cours", type: 'Numeric', optional: true },
+    { name: 'AnneesLivraison', title: 'Années prévisionnelles de livraison (liste)', type: 'Any', optional: true },
+    { name: 'AnneesLancement', title: 'Années prévisionnelles de lancement travaux (liste)', type: 'Any', optional: true },
     { name: 'FondFriche',   title: 'Fond friche', type: 'Any', optional: true },
     { name: 'AMB',          title: 'AMB', type: 'Any', optional: true },
     { name: 'TEL',          title: 'TEL', type: 'Any', optional: true },
@@ -194,6 +197,7 @@ grist.onRecord((record, mappings) => {
   renderIndicateurs(mapped, mappings);
   renderBlocage(mapped, mappings);
   renderNbOps(mapped);
+  renderTableauAnnees(mapped);
 });
 
 function isTruthy(v) {
@@ -220,6 +224,45 @@ function formatVal(v) {
   if (v === true) return 'oui';
   if (v === false || v == null) return '0 €';
   return v;
+}
+
+function countByYear(list) {
+  const counts = {};
+  (Array.isArray(list) ? list : []).forEach((v) => {
+    if (v == null || v === '') return;
+    const y = String(v);
+    counts[y] = (counts[y] || 0) + 1;
+  });
+  return counts;
+}
+
+function renderTableauAnnees(mapped) {
+  const el = document.getElementById('tableauAnnees');
+  const liv = countByYear(mapped.AnneesLivraison);
+  const lan = countByYear(mapped.AnneesLancement);
+  const years = [...new Set([...Object.keys(liv), ...Object.keys(lan)])].sort();
+
+  if (!years.length) { el.innerHTML = ''; return; }
+
+  const rows = years.map((y) =>
+    `<tr>
+      <td>${y}</td>
+      <td>${lan[y] || 0}</td>
+      <td>${liv[y] || 0}</td>
+    </tr>`
+  ).join('');
+
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">
+      <thead>
+        <tr style="background:var(--card);text-transform:uppercase;font-size:10px;letter-spacing:.04em;color:var(--ink-soft);">
+          <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--line);">Année</th>
+          <th style="text-align:center;padding:4px 8px;border-bottom:1px solid var(--line);">Lancement travaux</th>
+          <th style="text-align:center;padding:4px 8px;border-bottom:1px solid var(--line);">Livraison</th>
+        </tr>
+      </thead>
+      <tbody>${rows.replace(/<td>/g, '<td style="padding:4px 8px;border-bottom:1px solid var(--line);">').replace(/<td>(\d+)<\/td>/g, '<td style="padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;">$1</td>')}</tbody>
+    </table>`;
 }
 
 function renderNbOps(mapped) {
