@@ -95,15 +95,20 @@ grist.ready({
     { name: 'NbOperations',     title: "Nombre d'opérations en cours",                    type: 'Numeric', optional: true },
     { name: 'AnneesLivraison',    title: 'Années prévisionnelles de livraison (liste)',         type: 'Any', optional: true },
     { name: 'AnneesLancement',    title: 'Années prévisionnelles de lancement travaux (liste)',  type: 'Any', optional: true },
-    { name: 'LogementsLivraison', title: 'Logements par année de livraison (liste)',             type: 'Any', optional: true },
-    { name: 'LogementsLancement', title: 'Logements par année de lancement (liste)',             type: 'Any', optional: true },
-    { name: 'FondFriche',       title: 'Fond friche (€)',                                 type: 'Any',     optional: true },
-    { name: 'AMB',              title: 'AMB (€)',                                         type: 'Any',     optional: true },
-    { name: 'TEL',              title: 'TEL (€)',                                         type: 'Any',     optional: true },
-    { name: 'FinEtat',          title: 'Financement Etat hors droit commun (€)',          type: 'Any',     optional: true },
-    { name: 'FinCAPB',          title: 'Financement CAPB hors droit commun (€)',          type: 'Any',     optional: true },
-    { name: 'FinCD64',          title: 'Financement CD64 hors droit commun (€)',          type: 'Any',     optional: true },
-    { name: 'FinCommune',       title: 'Financement commune hors droit commun (€)',       type: 'Any',     optional: true },
+    { name: 'LogementsLivraison',  title: 'Logements par année de livraison (liste)',        type: 'Any', optional: true },
+    { name: 'LogementsLancement',  title: 'Logements par année de lancement (liste)',        type: 'Any', optional: true },
+    { name: 'VenteLivreLiv',       title: 'Vente libre – liste livraison',                   type: 'Any', optional: true },
+    { name: 'VenteLivreLan',       title: 'Vente libre – liste lancement',                   type: 'Any', optional: true },
+    { name: 'InterLiv',            title: 'Intermédiaire – liste livraison',                  type: 'Any', optional: true },
+    { name: 'InterLan',            title: 'Intermédiaire – liste lancement',                  type: 'Any', optional: true },
+    { name: 'LLSLiv',              title: 'LLS – liste livraison',                            type: 'Any', optional: true },
+    { name: 'LLSLan',              title: 'LLS – liste lancement',                            type: 'Any', optional: true },
+    { name: 'AccesLiv',            title: 'Accession – liste livraison',                      type: 'Any', optional: true },
+    { name: 'AccesLan',            title: 'Accession – liste lancement',                      type: 'Any', optional: true },
+    { name: 'FondFriche',   title: 'Fond friche (€)',                       type: 'Any', optional: true },
+    { name: 'AMB',          title: 'AMB (€)',                               type: 'Any', optional: true },
+    { name: 'TEL',          title: 'TEL (€)',                               type: 'Any', optional: true },
+    { name: 'FinHDC',       title: 'Financements h.d.c. (total, €)',        type: 'Any', optional: true },
     { name: 'Indicateurs',      title: 'Logements : total en cours + 4 colonnes "dont logements"',
       type: 'Numeric', allowMultiple: true },
     { name: 'StatutsBlocage',   title: 'Statuts de blocage (6 colonnes)',
@@ -159,13 +164,10 @@ grist.onRecord((record, mappings) => {
 /* ---- Badges bas ---- */
 function renderBadges(m) {
   const items = [
-    { label:'Fond friche', val:m.FondFriche },
-    { label:'AMB',         val:m.AMB },
-    { label:'TEL',         val:m.TEL },
-    { label:'Fin. État h.d.c.',    val:m.FinEtat },
-    { label:'Fin. CAPB h.d.c.',   val:m.FinCAPB },
-    { label:'Fin. CD64 h.d.c.',   val:m.FinCD64 },
-    { label:'Fin. Commune h.d.c.',val:m.FinCommune },
+    { label:'Fond friche',       val:m.FondFriche },
+    { label:'AMB',               val:m.AMB },
+    { label:'TEL',               val:m.TEL },
+    { label:'Financements h.d.c.', val:m.FinHDC },
   ];
   document.getElementById('badges').innerHTML = items
     .map(i=>`<span class="badge ${isTruthy(i.val)?'on':''}">${i.label} : ${formatEuro(i.val)}</span>`)
@@ -183,43 +185,52 @@ function renderNbOps(m) {
 
 /* ---- Tableau années ---- */
 function renderTableauAnnees(m) {
-  const el  = document.getElementById('tableauAnnees');
+  const el = document.getElementById('tableauAnnees');
 
-  // Zip années + logements pour sommer
-  function buildData(years, logs) {
-    const ops = {}, lgs = {};
-    const yList = Array.isArray(years) ? years : [];
-    const lList = Array.isArray(logs)  ? logs  : [];
-    yList.forEach((y, i) => {
-      if (y == null || y === '') return;
-      const k = String(y);
-      ops[k] = (ops[k] || 0) + 1;
-      lgs[k] = (lgs[k] || 0) + (Number(lList[i]) || 0);
+  function buildData(years, logs, vl, inter, lls, acces) {
+    const d = {};
+    const y = Array.isArray(years) ? years : [];
+    const toArr = v => Array.isArray(v) ? v : [];
+    y.forEach((yr, i) => {
+      if (yr == null || yr === '') return;
+      const k = String(yr);
+      if (!d[k]) d[k] = { ops:0, log:0, vl:0, inter:0, lls:0, acces:0 };
+      d[k].ops++;
+      d[k].log   += Number(toArr(logs)[i])  || 0;
+      d[k].vl    += Number(toArr(vl)[i])    || 0;
+      d[k].inter += Number(toArr(inter)[i]) || 0;
+      d[k].lls   += Number(toArr(lls)[i])   || 0;
+      d[k].acces += Number(toArr(acces)[i]) || 0;
     });
-    return { ops, lgs };
+    return d;
   }
 
-  const lan = buildData(m.AnneesLancement,  m.LogementsLancement);
-  const liv = buildData(m.AnneesLivraison,  m.LogementsLivraison);
-  const years = [...new Set([...Object.keys(lan.ops),...Object.keys(liv.ops)])].sort();
+  const lan = buildData(m.AnneesLancement, m.LogementsLancement, m.VenteLivreLan, m.InterLan, m.LLSLan, m.AccesLan);
+  const liv = buildData(m.AnneesLivraison, m.LogementsLivraison, m.VenteLivreLiv, m.InterLiv, m.LLSLiv, m.AccesLiv);
+  const years = [...new Set([...Object.keys(lan),...Object.keys(liv)])].sort();
   if (!years.length) { el.innerHTML=''; return; }
 
-  const rows = years.map(y=>`
-    <tr>
-      <td>${y}</td>
-      <td>${lan.ops[y]||0} op. / ${lan.lgs[y]||0} log.</td>
-      <td>${liv.ops[y]||0} op. / ${liv.lgs[y]||0} log.</td>
-    </tr>`).join('');
+  function cell(d) {
+    if (!d) return '—';
+    const detail = [
+      d.vl    ? `${d.vl} VL`    : '',
+      d.inter ? `${d.inter} Int.` : '',
+      d.lls   ? `${d.lls} LLS`  : '',
+      d.acces ? `${d.acces} Acc.` : '',
+    ].filter(Boolean).join('; ');
+    return `${d.ops} op. / ${d.log} log.${detail ? `<br><small style="color:var(--ink-soft)">(dont ${detail})</small>` : ''}`;
+  }
 
-  el.innerHTML = `
-    <table class="tbl">
-      <thead><tr>
-        <th>Année</th>
-        <th>Lancement travaux</th>
-        <th>Livraison</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+  const rows = years.map(y=>`<tr>
+    <td>${y}</td>
+    <td>${cell(lan[y])}</td>
+    <td>${cell(liv[y])}</td>
+  </tr>`).join('');
+
+  el.innerHTML = `<table class="tbl">
+    <thead><tr><th>Année</th><th>Lancement travaux</th><th>Livraison</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 /* ---- Graphique 1 — logements (barres + tick connecteur) ---- */
@@ -276,8 +287,11 @@ function renderBlocage(m, mappings) {
         legend:{ display:true, position:'right', labels:{ boxWidth:14, font:{size:15}, padding:10 } },
         datalabels:{
           color:'#2B3430',
-          font:{ size:11, weight:'600' },
-          formatter:(v)=> v===0 ? '' : v,
+          font:{ size:15, weight:'700' },
+          backgroundColor:'rgba(255,255,255,0.75)',
+          borderRadius:4,
+          padding:{ top:2, bottom:2, left:4, right:4 },
+          formatter:(v)=> v===0||v==null ? '' : v,
         },
       },
     },
