@@ -69,8 +69,7 @@
     </section>
 
     <section class="card">
-      <h2>L'état de blocage des logements en cours</h2>
-      <div class="note" id="noteNbOps" style="margin:0 0 6px;font-weight:600;color:var(--ink);"></div>
+      <h2>L'état de blocage des opérations en cours — <span id="nbOpsLabel" style="font-weight:400;"></span></h2>
       <div class="chart-box"><canvas id="chartBlocage"></canvas></div>
       <div class="note" id="noteBlocage"></div>
     </section>
@@ -179,10 +178,10 @@ function renderBadges(m) {
 
 /* ---- Compteur opérations ---- */
 function renderNbOps(m) {
-  const el = document.getElementById('noteNbOps');
+  const el = document.getElementById('nbOpsLabel');
   const n  = m.NbOperations;
   el.textContent = typeof n==='number'
-    ? n.toLocaleString('fr-FR') + ' opération' + (n>1?'s':'') + ' concernée' + (n>1?'s':'')
+    ? n.toLocaleString('fr-FR') + ' opération' + (n>1?'s':'') + ' référencée' + (n>1?'s':'')
     : '';
 }
 
