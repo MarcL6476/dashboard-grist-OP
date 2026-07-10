@@ -15,7 +15,7 @@
   header.fiche{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:8px;gap:12px;}
   header.fiche h1{margin:0;font-size:19px;font-weight:650;}
   .maj{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);white-space:nowrap;}
-  .bloc-2023{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:8px 12px;margin-bottom:12px;font-size:12px;line-height:1.7;}
+  .bloc-2023{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:8px 12px;margin-bottom:12px;font-size:13px;line-height:1.8;}
   .bloc-2023 strong{font-size:13px;}
   .section-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);font-weight:600;margin:12px 0 6px;}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
@@ -45,17 +45,17 @@
   <div class="section-label">Opérations vivantes</div>
   <div class="grid" id="grid">
     <section class="card">
-      <h2>Nombre de logements dans les opérations</h2>
+      <h2 id="titreIndicateurs">Nombre de logements dans les opérations en cours</h2>
       <div class="chart-box"><canvas id="chartIndicateurs"></canvas></div>
       <div class="note" id="noteIndicateurs"></div>
     </section>
     <section class="card">
-      <h2>État de blocage des opérations — <span id="nbOpsLabel" style="font-weight:400;"></span></h2>
+      <h2>État des opérations en cours — <span id="nbOpsLabel" style="font-weight:400;"></span></h2>
       <div class="chart-box"><canvas id="chartBlocage"></canvas></div>
       <div class="note" id="noteBlocage"></div>
     </section>
     <section class="card">
-      <h2>État de blocage des logements</h2>
+      <h2>État des logements en cours</h2>
       <div class="chart-box"><canvas id="chartBlocageLogs"></canvas></div>
       <div class="note" id="noteBlocageLogs"></div>
     </section>
@@ -137,7 +137,7 @@ grist.onRecord((record,mappings)=>{
   $('titre').textContent=m.Libelle||'Opération';
   $('nbOpsLabel').textContent=typeof m.NbOperations==='number'
     ?m.NbOperations+' opération'+(m.NbOperations>1?'s':'')+' référencée'+(m.NbOperations>1?'s':''):'';
-  renderBloc2023(m);
+  $('titreIndicateurs').textContent=`Nombre de logements dans les ${n(m.NbOperations)} opération${n(m.NbOperations)>1?'s':''} en cours`;  renderBloc2023(m);
   renderBadges(m);
   renderIndicateurs(m,mappings);
   renderBlocage(m,mappings);
@@ -149,18 +149,18 @@ function renderBloc2023(m){
   const ops=n(m.NbOps2023), logs=n(m.NbLogs2023), ls=n(m.NbLS2023), acc=n(m.NbAcc2023);
   const liv=n(m.OpsLivrees), livLogs=n(m.LogsLivres), tf=n(m.OpsTFLivrees), tfLogs=n(m.LogsTFLivres);
   $('bloc2023').innerHTML=
-    `<strong>Opérations recensées depuis 2023 : ${ops} opération${ops>1?'s':''}</strong>
-     — soit <strong>${logs.toLocaleString('fr-FR')} logement${logs>1?'s':''}</strong>
-     (dont ${ls.toLocaleString('fr-FR')} LS ; ${acc.toLocaleString('fr-FR')} Acc.)<br>
-     — dont <strong>${liv} déjà livrée${liv>1?'s':''}</strong>
+    `Opérations recensées depuis 2023 : ${ops} opération${ops>1?'s':''}
+     — soit ${logs.toLocaleString('fr-FR')} logement${logs>1?'s':''}
+     <strong>(dont ${ls.toLocaleString('fr-FR')} LLS ; ${acc.toLocaleString('fr-FR')} Acc.)</strong><br>
+     — dont ${liv} déjà livrée${liv>1?'s':''}
      (${livLogs.toLocaleString('fr-FR')} logement${livLogs>1?'s':''})<br>
-     — dont <strong>${tf} débloquée${tf>1?'s':''} par la Task Force et livrée${tf>1?'s':''}</strong>
+     — dont ${tf} débloquée${tf>1?'s':''} par la Task Force et livrée${tf>1?'s':''}
      (${tfLogs.toLocaleString('fr-FR')} logement${tfLogs>1?'s':''})`;
 }
 
 function renderBadges(m){
   $('badges').innerHTML=[
-    {label:'Fond friche',val:m.FondFriche},{label:'AMB',val:m.AMB},
+    {label:'Fond friche',val:m.FondFriche},
     {label:'TEL',val:m.TEL},{label:'Financements h.d.c.',val:m.FinHDC},
   ].map(i=>`<span class="badge ${isTruthy(i.val)?'on':''}">${i.label} : ${formatEuro(i.val)}</span>`).join('');
 }
