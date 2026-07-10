@@ -12,20 +12,21 @@
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;}
   #app{padding:10px 14px 16px;}
-  header.fiche{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:8px;gap:12px;}
+  header.fiche{border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:8px;}
+  .header-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
   header.fiche h1{margin:0;font-size:19px;font-weight:650;}
   .maj{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);white-space:nowrap;}
-  .bloc-2023{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:8px 12px;margin-bottom:12px;font-size:13px;line-height:1.8;}
-  .bloc-2023 strong{font-size:13px;}
-  .section-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);font-weight:600;margin:12px 0 6px;}
+  .header-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+  .section-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);font-weight:600;margin:4px 0 6px;}
+  .bloc-2023{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 14px;margin-bottom:12px;font-size:14px;line-height:2;}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 12px 8px;}
-  .card h2{margin:0 0 8px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--soft);font-weight:600;}
+  .card h2{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--soft);font-weight:600;}
   .chart-box{position:relative;height:220px;}
-  .note{font-size:11px;color:var(--soft);margin-top:6px;}
-  .subventions{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;}
+  .note{font-size:11px;color:var(--soft);margin-top:5px;}
   .badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--soft);}
   .badge.on{background:var(--sage);border-color:var(--sage);color:#fff;}
+  .subventions{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;}
   .tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;}
   .tbl th{background:var(--card);text-transform:uppercase;font-size:10px;letter-spacing:.04em;color:var(--soft);padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;width:33%;}
   .tbl td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;width:33%;}
@@ -36,10 +37,14 @@
 <body>
 <div id="app">
   <header class="fiche" id="header">
-    <h1 id="titre">Sélectionnez une ligne</h1>
-    <span class="maj" id="majLine">Mise à jour —</span>
+    <div class="header-top">
+      <h1 id="titre">Sélectionnez une ligne</h1>
+      <span class="maj" id="majLine">Mise à jour —</span>
+    </div>
+    <div class="header-badges" id="headerBadges"></div>
   </header>
 
+  <div class="section-label">Opérations recensées depuis 2023</div>
   <div class="bloc-2023" id="bloc2023"></div>
 
   <div class="section-label">Opérations vivantes</div>
@@ -50,12 +55,12 @@
       <div class="note" id="noteIndicateurs"></div>
     </section>
     <section class="card">
-      <h2>État des opérations en cours — <span id="nbOpsLabel" style="font-weight:400;"></span></h2>
+      <h2 id="titreOps">État des opérations en cours</h2>
       <div class="chart-box"><canvas id="chartBlocage"></canvas></div>
       <div class="note" id="noteBlocage"></div>
     </section>
     <section class="card">
-      <h2>État des logements en cours</h2>
+      <h2 id="titreLogs">État des logements en cours</h2>
       <div class="chart-box"><canvas id="chartBlocageLogs"></canvas></div>
       <div class="note" id="noteBlocageLogs"></div>
     </section>
@@ -71,40 +76,36 @@ if (window.ChartDataLabels) Chart.register(window.ChartDataLabels);
 const col=(name,title,type,extra={})=>({name,title,type,optional:true,...extra});
 grist.ready({
   columns:[
-    col('Libelle',          'Libellé (commune)',                            'Text'),
-    col('DerniereMaJ',      'Date dernière mise à jour',                    'DateTime'),
-    col('NbOperations',     "Nb opérations vivantes",                       'Numeric'),
-    // Bloc depuis 2023
-    col('NbOps2023',        'Nb opérations recensées depuis 2023',          'Numeric'),
-    col('NbLogs2023',       'Nb logements total (depuis 2023)',             'Numeric'),
-    col('NbLS2023',         'Dont LS (depuis 2023)',                        'Numeric'),
-    col('NbAcc2023',        'Dont Acc. (depuis 2023)',                      'Numeric'),
-    col('OpsLivrees',       'Dont opérations déjà livrées',                 'Numeric'),
-    col('LogsLivres',       'Dont logements déjà livrés',                   'Numeric'),
-    col('OpsTFLivrees',     'Dont opérations TF livrées',                   'Numeric'),
-    col('LogsTFLivres',     'Dont logements TF livrés',                     'Numeric'),
-    // Graphiques
-    col('Indicateurs',      'Logements : total + 4 colonnes "dont"',       'Numeric',{allowMultiple:true,optional:false}),
-    col('StatutsBlocage',   'Statuts blocage – opérations (6 colonnes)',    'Numeric',{allowMultiple:true,optional:false}),
-    col('StatutsBlocageLogs','Statuts blocage – logements (6 colonnes)',    'Numeric',{allowMultiple:true,optional:false}),
-    // Subventions
-    col('FondFriche',       'Fond friche (€)',                              'Any'),
-    col('AMB',              'AMB (€)',                                      'Any'),
-    col('TEL',              'TEL (€)',                                      'Any'),
-    col('FinHDC',           'Financements h.d.c. total (€)',                'Any'),
-    // Tableau années
-    col('AnneesLivraison',  'Années livraison (liste)',                     'Any'),
-    col('AnneesLancement',  'Années lancement travaux (liste)',             'Any'),
-    col('LogementsLiv',     'Logements / livraison (liste)',                'Any'),
-    col('LogementsLan',     'Logements / lancement (liste)',                'Any'),
-    col('VenteLivreLiv',    'Vente libre / livraison (liste)',              'Any'),
-    col('VenteLivreLan',    'Vente libre / lancement (liste)',              'Any'),
-    col('InterLiv',         'Intermédiaire / livraison (liste)',            'Any'),
-    col('InterLan',         'Intermédiaire / lancement (liste)',            'Any'),
-    col('LLSLiv',           'LLS / livraison (liste)',                      'Any'),
-    col('LLSLan',           'LLS / lancement (liste)',                      'Any'),
-    col('AccesLiv',         'Accession / livraison (liste)',                'Any'),
-    col('AccesLan',         'Accession / lancement (liste)',                'Any'),
+    col('Libelle',           'Libellé (commune)',                          'Text'),
+    col('DerniereMaJ',       'Date dernière mise à jour',                  'DateTime'),
+    col('NbOperations',      'Nb opérations vivantes',                     'Numeric'),
+    col('NbOps2023',         'Nb opérations recensées depuis 2023',        'Numeric'),
+    col('NbLogs2023',        'Nb logements total (depuis 2023)',           'Numeric'),
+    col('NbLS2023',          'Dont LLS (depuis 2023)',                     'Numeric'),
+    col('NbAcc2023',         'Dont Acc. (depuis 2023)',                    'Numeric'),
+    col('OpsLivrees',        'Dont opérations déjà livrées',               'Numeric'),
+    col('LogsLivres',        'Dont logements déjà livrés',                 'Numeric'),
+    col('OpsTFLivrees',      'Dont opérations TF livrées',                 'Numeric'),
+    col('LogsTFLivres',      'Dont logements TF livrés',                   'Numeric'),
+    col('FuturBlocage',      'Futur blocage détecté (nb logements)',        'Numeric'),
+    col('Indicateurs',       'Logements : total + 4 colonnes "dont"',     'Numeric',{allowMultiple:true,optional:false}),
+    col('StatutsBlocage',    'Statuts blocage – opérations (6 colonnes)',  'Numeric',{allowMultiple:true,optional:false}),
+    col('StatutsBlocageLogs','Statuts blocage – logements (6 colonnes)',   'Numeric',{allowMultiple:true,optional:false}),
+    col('FondFriche',        'Fond friche (€)',                            'Any'),
+    col('TEL',               'TEL (€)',                                    'Any'),
+    col('FinHDC',            'Financements h.d.c. total (€)',              'Any'),
+    col('AnneesLivraison',   'Années livraison (liste)',                   'Any'),
+    col('AnneesLancement',   'Années lancement travaux (liste)',           'Any'),
+    col('LogementsLiv',      'Logements / livraison (liste)',              'Any'),
+    col('LogementsLan',      'Logements / lancement (liste)',              'Any'),
+    col('VenteLivreLiv',     'Vente libre / livraison (liste)',            'Any'),
+    col('VenteLivreLan',     'Vente libre / lancement (liste)',            'Any'),
+    col('InterLiv',          'Intermédiaire / livraison (liste)',          'Any'),
+    col('InterLan',          'Intermédiaire / lancement (liste)',          'Any'),
+    col('LLSLiv',            'LLS / livraison (liste)',                    'Any'),
+    col('LLSLan',            'LLS / lancement (liste)',                    'Any'),
+    col('AccesLiv',          'Accession / livraison (liste)',              'Any'),
+    col('AccesLan',          'Accession / lancement (liste)',              'Any'),
   ],
   requiredAccess:'read table',
 });
@@ -135,9 +136,21 @@ grist.onRecord((record,mappings)=>{
   toggle(true);
   $('majLine').textContent='Mise à jour — '+formatDate(m.DerniereMaJ);
   $('titre').textContent=m.Libelle||'Opération';
-  $('nbOpsLabel').textContent=typeof m.NbOperations==='number'
-    ?m.NbOperations+' opération'+(m.NbOperations>1?'s':'')+' référencée'+(m.NbOperations>1?'s':''):'';
-  $('titreIndicateurs').textContent=`Nombre de logements dans les ${n(m.NbOperations)} opération${n(m.NbOperations)>1?'s':''} en cours`;  renderBloc2023(m);
+
+  // Titres dynamiques avec gras
+  const nbOps=n(m.NbOperations), nbLogs=n(m.NbLogs2023);
+  $('titreIndicateurs').innerHTML=`Nombre de logements dans les <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`;
+  $('titreOps').innerHTML=`État des <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`;
+  $('titreLogs').innerHTML=`État des <strong>${nbLogs.toLocaleString('fr-FR')}</strong> logement${nbLogs>1?'s':''} en cours`;
+
+  // Badges en haut
+  $('headerBadges').innerHTML=[
+    {label:'Fond friche',val:m.FondFriche},
+    {label:'TEL',val:m.TEL},
+    {label:'Financements h.d.c.',val:m.FinHDC},
+  ].map(i=>`<span class="badge ${isTruthy(i.val)?'on':''}">${i.label} : ${formatEuro(i.val)}</span>`).join('');
+
+  renderBloc2023(m);
   renderBadges(m);
   renderIndicateurs(m,mappings);
   renderBlocage(m,mappings);
@@ -149,20 +162,15 @@ function renderBloc2023(m){
   const ops=n(m.NbOps2023), logs=n(m.NbLogs2023), ls=n(m.NbLS2023), acc=n(m.NbAcc2023);
   const liv=n(m.OpsLivrees), livLogs=n(m.LogsLivres), tf=n(m.OpsTFLivrees), tfLogs=n(m.LogsTFLivres);
   $('bloc2023').innerHTML=
-    `Opérations recensées depuis 2023 : ${ops} opération${ops>1?'s':''}
-     — soit ${logs.toLocaleString('fr-FR')} logement${logs>1?'s':''}
+    `<strong>${ops} opération${ops>1?'s':''}</strong> — soit <strong>${logs.toLocaleString('fr-FR')} logement${logs>1?'s':''}</strong>
      <strong>(dont ${ls.toLocaleString('fr-FR')} LLS ; ${acc.toLocaleString('fr-FR')} Acc.)</strong><br>
-     — dont ${liv} déjà livrée${liv>1?'s':''}
-     (${livLogs.toLocaleString('fr-FR')} logement${livLogs>1?'s':''})<br>
-     — dont ${tf} débloquée${tf>1?'s':''} par la Task Force et livrée${tf>1?'s':''}
-     (${tfLogs.toLocaleString('fr-FR')} logement${tfLogs>1?'s':''})`;
+     — dont ${liv} déjà livrée${liv>1?'s':''} (${livLogs.toLocaleString('fr-FR')} logement${livLogs>1?'s':''})<br>
+     — dont ${tf} débloquée${tf>1?'s':''} par la Task Force et livrée${tf>1?'s':''} (${tfLogs.toLocaleString('fr-FR')} logement${tfLogs>1?'s':''})`;
 }
 
 function renderBadges(m){
-  $('badges').innerHTML=[
-    {label:'Fond friche',val:m.FondFriche},
-    {label:'TEL',val:m.TEL},{label:'Financements h.d.c.',val:m.FinHDC},
-  ].map(i=>`<span class="badge ${isTruthy(i.val)?'on':''}">${i.label} : ${formatEuro(i.val)}</span>`).join('');
+  // Gardé vide — subventions maintenant dans header
+  $('badges').innerHTML='';
 }
 
 function renderIndicateurs(m,mappings){
@@ -181,8 +189,7 @@ function renderIndicateurs(m,mappings){
 
 function makePie(canvasId,vals,labels){
   destroy(canvasId);
-  charts[canvasId]=new Chart($(canvasId),{
-    type:'pie',
+  charts[canvasId]=new Chart($(canvasId),{type:'pie',
     data:{labels,datasets:[{data:vals,backgroundColor:PPIE.slice(0,vals.length)}]},
     options:pieOpts(),
   });
@@ -198,7 +205,8 @@ function renderBlocage(m,mappings){
 function renderBlocageLogs(m,mappings){
   const note=$('noteBlocageLogs'), vals=toArr(m.StatutsBlocageLogs), ids=toArr(mappings&&mappings.StatutsBlocageLogs);
   if(!vals.length){note.textContent='Mappez vos colonnes de blocage logements.';destroy('chartBlocageLogs');return;}
-  note.textContent='';
+  const fb=n(m.FuturBlocage);
+  note.textContent=fb>0?`${fb} futur blocage${fb>1?'s':''} détecté${fb>1?'s':''}` : '';
   makePie('chartBlocageLogs',vals,ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1)));
 }
 
