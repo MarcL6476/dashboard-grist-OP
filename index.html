@@ -26,7 +26,6 @@
   .note{font-size:11px;color:var(--soft);margin-top:5px;}
   .badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--soft);}
   .badge.on{background:var(--sage);border-color:var(--sage);color:#fff;}
-  .subventions{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;}
   .tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;}
   .tbl th{background:var(--card);text-transform:uppercase;font-size:10px;letter-spacing:.04em;color:var(--soft);padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;width:33%;}
   .tbl td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;width:33%;}
@@ -66,7 +65,6 @@
     </section>
   </div>
 
-  <div class="subventions" id="badges"></div>
   <div id="tableauAnnees"></div>
   <div id="empty" class="hidden">Aucune ligne sélectionnée.</div>
 </div>
@@ -151,7 +149,6 @@ grist.onRecord((record,mappings)=>{
   ].map(i=>`<span class="badge ${isTruthy(i.val)?'on':''}">${i.label} : ${formatEuro(i.val)}</span>`).join('');
 
   renderBloc2023(m);
-  renderBadges(m);
   renderIndicateurs(m,mappings);
   renderBlocage(m,mappings);
   renderBlocageLogs(m,mappings);
@@ -166,11 +163,6 @@ function renderBloc2023(m){
      <strong>(dont ${ls.toLocaleString('fr-FR')} LLS ; ${acc.toLocaleString('fr-FR')} Acc.)</strong><br>
      — dont ${liv} déjà livrée${liv>1?'s':''} (${livLogs.toLocaleString('fr-FR')} logement${livLogs>1?'s':''})<br>
      — dont ${tf} débloquée${tf>1?'s':''} par la Task Force et livrée${tf>1?'s':''} (${tfLogs.toLocaleString('fr-FR')} logement${tfLogs>1?'s':''})`;
-}
-
-function renderBadges(m){
-  // Gardé vide — subventions maintenant dans header
-  $('badges').innerHTML='';
 }
 
 function renderIndicateurs(m,mappings){
