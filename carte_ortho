@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Carte opérations - Orthophoto/Cadastre</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  #map { width: 100%; height: 100vh; }
+  .leaflet-popup-content-wrapper { border-radius: 8px; }
+  .op-popup { font-size: 13px; line-height: 1.5; min-width: 180px; }
+  .op-popup table { border-collapse: collapse; width: 100%; }
+  .op-popup td { padding: 2px 4px; vertical-align: top; }
+  .op-popup td.label { color: #666; white-space: nowrap; padding-right: 8px; font-weight: 600; }
+  .op-empty { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: #fff; padding: 6px 14px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.2);
+    font-size: 13px; color: #444; z-index: 1000; display: none; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="op-empty" id="emptyMsg">Aucune coordonnée à afficher</div>
+
+<script>
+// ---------- Configuration Grist ----------
+const COLUMN_MAPPING = [
+  { name: "Latitude", title: "Latitude", type: "Numeric", strictType: true },
+  { name: "Longitude", title: "Longitude", type: "Numeric", strictType: true },
+  { name: "Popup1", title: "Popup - champ 1", optional: true, type: "Any" },
+  { name: "Popup2", title: "Popup - champ 2", optional: true, type: "Any" },
+  { name: "Popup3", title: "Popup - champ 3", optional: true, type: "Any" },
+  { name: "Popup4", title: "Popup - champ 4", optional: true, type: "Any" }
+];
+
+grist.ready({
+  columns: COLUMN_MAPPING,
+  requiredAccess: "read table"
+});
+
+// ---------- Carte ----------
+const map = L.map('map', { zoomControl: true }).setView([46.6, 2.4], 6);
+
+// Fond orthophoto IGN (Géoplateforme, sans clé)
+const orthophoto = L.tileLayer(
+  'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
+  '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM' +
+  '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg',
+  { attribution: 'IGN-F/Géoportail', maxZoom: 20, tileSize: 256 }
+).addTo(map);
+
+// Calque cadastre IGN (Parcellaire Express)
+const cadastre = L.tileLayer(
+  'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
+  '&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&STYLE=bdparcellaire&TILEMATRIXSET=PM' +
+  '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',
+  { attribution: 'IGN-F/Cadastre', maxZoom: 20, tileSize: 256, opacity: 0.8 }
+).addTo(map);
+
+L.control.layers(
+  { "Orthophoto": orthophoto },
+  { "Cadastre": cadastre }
+).addTo(map);
+
+let markersLayer = L.layerGroup().addTo(map);
+let currentMapped = [];
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function buildPopupHtml(rec) {
+  const labels = ['Popup1', 'Popup2', 'Popup3', 'Popup4'];
+  let rows = '';
+  labels.forEach((key, i) => {
+    const val = rec[key];
+    if (val === undefined || val === null || val === '') return;
+    rows += `<tr><td class="label">${i === 0 ? '' : ''}</td><td>${escapeHtml(val)}</td></tr>`;
+  });
+  if (!rows) rows = '<tr><td>—</td></tr>';
+  return `<div class="op-popup"><table>${rows}</table></div>`;
+}
+
+function redraw(records, mappings) {
+  markersLayer.clearLayers();
+  const emptyMsg = document.getElementById('emptyMsg');
+  if (!records || !records.length) {
+    emptyMsg.style.display = 'block';
+    return;
+  }
+
+  const mapped = records.map(r => grist.mapColumnNames(r, mappings) || r);
+  currentMapped = mapped;
+
+  const bounds = [];
+  let count = 0;
+
+  mapped.forEach((rec, idx) => {
+    const lat = parseFloat(rec.Latitude);
+    const lng = parseFloat(rec.Longitude);
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    const marker = L.circleMarker([lat, lng], {
+      radius: 9,
+      color: '#e07b1f',
+      weight: 2,
+      fillColor: '#f5a742',
+      fillOpacity: 0.45,
+      opacity: 0.9
+    });
+
+    marker.bindPopup(buildPopupHtml(rec));
+
+    marker.on('click', () => {
+      const rowId = records[idx].id;
+      if (rowId !== undefined) {
+        grist.setCursorPos({ rowId }).catch(() => {});
+      }
+    });
+
+    marker.addTo(markersLayer);
+    bounds.push([lat, lng]);
+    count++;
+  });
+
+  emptyMsg.style.display = count === 0 ? 'block' : 'none';
+
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+  }
+}
+
+grist.onRecords((records, mappings) => {
+  redraw(records, mappings);
+});
+</script>
+</body>
+</html>
