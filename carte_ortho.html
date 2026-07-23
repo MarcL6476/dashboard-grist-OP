@@ -9,15 +9,42 @@
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
-  #map { width: 100%; height: 100vh; }
-  .leaflet-popup-content-wrapper { border-radius: 8px; }
-  .op-popup { font-size: 13px; line-height: 1.5; min-width: 180px; }
-  .op-popup table { border-collapse: collapse; width: 100%; }
-  .op-popup td { padding: 2px 4px; vertical-align: top; }
-  .op-popup td.label { color: #666; white-space: nowrap; padding-right: 8px; font-weight: 600; }
-  .op-empty { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  #map { width: 100%; height: 100vh; background: #eef1f4; }
+
+  /* Popup compact + transparent */
+  .leaflet-popup-content-wrapper {
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 1px 6px rgba(0,0,0,.25);
+  }
+  .leaflet-popup-tip { background: rgba(255, 255, 255, 0.5); }
+  .leaflet-popup-content { margin: 6px 8px; }
+  .op-popup { font-size: 12px; line-height: 1.35; }
+  .op-popup .row { display: flex; gap: 6px; white-space: nowrap; }
+  .op-popup .row + .row { margin-top: 1px; }
+  .op-popup .label { color: #555; font-weight: 600; }
+  .op-popup .label::after { content: ":"; }
+
+  /* Case a cocher cadastre, compacte, toujours visible */
+  .cadastre-toggle {
+    background: rgba(255,255,255,0.9);
+    padding: 5px 8px;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.3);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .cadastre-toggle input { margin: 0; cursor: pointer; }
+
+  .op-empty {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
     background: #fff; padding: 6px 14px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.2);
-    font-size: 13px; color: #444; z-index: 1000; display: none; }
+    font-size: 13px; color: #444; z-index: 1000; display: none;
+  }
 </style>
 </head>
 <body>
@@ -31,41 +58,30 @@ const COLUMN_MAPPING = [
   { name: "Longitude", title: "Longitude", type: "Numeric", strictType: true },
   { name: "Popup1", title: "Popup - champ 1", optional: true, type: "Any" },
   { name: "Popup2", title: "Popup - champ 2", optional: true, type: "Any" },
-  { name: "Popup3", title: "Popup - champ 3", optional: true, type: "Any" },
-  { name: "Popup4", title: "Popup - champ 4", optional: true, type: "Any" }
+  { name: "Popup3", title: "Popup - Logements total", optional: true, type: "Any" },
+  { name: "Popup4", title: "Popup - dont LS", optional: true, type: "Any" }
 ];
+
+// Libelles fixes affiches dans le popup pour les 2 dernieres colonnes mappees
+const FIXED_LABELS = {
+  Popup3: "Logements total",
+  Popup4: "dont LS"
+};
 
 grist.ready({
   columns: COLUMN_MAPPING,
   requiredAccess: "read table"
 });
 
-// ---------- Carte ----------
-const map = L.map('map', { zoomControl: true }).setView([46.6, 2.4], 6);
-
-// Fond orthophoto IGN (Géoplateforme, sans clé)
-const orthophoto = L.tileLayer(
-  'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
-  '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM' +
-  '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg',
-  { attribution: 'IGN-F/Géoportail', maxZoom: 20, tileSize: 256 }
-).addTo(map);
-
-// Calque cadastre IGN (Parcellaire Express)
-const cadastre = L.tileLayer(
-  'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
-  '&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&STYLE=bdparcellaire&TILEMATRIXSET=PM' +
-  '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',
-  { attribution: 'IGN-F/Cadastre', maxZoom: 20, tileSize: 256, opacity: 0.8 }
-).addTo(map);
-
-L.control.layers(
-  { "Orthophoto": orthophoto },
-  { "Cadastre": cadastre }
-).addTo(map);
-
-let markersLayer = L.layerGroup().addTo(map);
-let currentMapped = [];
+// ---------- Etat ----------
+let map = null;
+let cadastre = null;
+let markersLayer = null;
+let markersByRowId = {};
+let selectedRowId = null;
+let pendingRecords = null;
+let pendingMappings = null;
+let mapInitialized = false;
 
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
@@ -75,19 +91,102 @@ function escapeHtml(str) {
 }
 
 function buildPopupHtml(rec) {
-  const labels = ['Popup1', 'Popup2', 'Popup3', 'Popup4'];
+  const keys = ['Popup1', 'Popup2', 'Popup3', 'Popup4'];
   let rows = '';
-  labels.forEach((key, i) => {
+  keys.forEach(key => {
     const val = rec[key];
     if (val === undefined || val === null || val === '') return;
-    rows += `<tr><td class="label">${i === 0 ? '' : ''}</td><td>${escapeHtml(val)}</td></tr>`;
+    const label = FIXED_LABELS[key];
+    rows += label
+      ? `<div class="row"><span class="label">${label}</span><span>${escapeHtml(val)}</span></div>`
+      : `<div class="row">${escapeHtml(val)}</div>`;
   });
-  if (!rows) rows = '<tr><td>—</td></tr>';
-  return `<div class="op-popup"><table>${rows}</table></div>`;
+  if (!rows) rows = '<div class="row">—</div>';
+  return `<div class="op-popup">${rows}</div>`;
 }
 
+function markerStyle(selected) {
+  return selected
+    ? { radius: 12, color: '#c2540c', weight: 3, fillColor: '#f5a742', fillOpacity: 0.65, opacity: 1 }
+    : { radius: 9, color: '#e07b1f', weight: 2, fillColor: '#f5a742', fillOpacity: 0.45, opacity: 0.9 };
+}
+
+// ---------- Initialisation carte (lazy) ----------
+function initMap() {
+  if (mapInitialized) return;
+  mapInitialized = true;
+
+  map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([46.6, 2.4], 6);
+
+  // Fond orthophoto IGN (Geoplateforme, sans cle)
+  L.tileLayer(
+    'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
+    '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM' +
+    '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg',
+    { attribution: 'IGN-F/Geoportail', maxZoom: 20, tileSize: 256, updateWhenIdle: true, keepBuffer: 1 }
+  ).addTo(map);
+
+  // Calque cadastre IGN (Parcellaire Express) - cree mais pas ajoute par defaut
+  cadastre = L.tileLayer(
+    'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
+    '&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&STYLE=bdparcellaire&TILEMATRIXSET=PM' +
+    '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',
+    { attribution: 'IGN-F/Cadastre', maxZoom: 20, tileSize: 256, opacity: 0.8, updateWhenIdle: true, keepBuffer: 1 }
+  );
+
+  // Case a cocher cadastre (controle custom, compact, direct)
+  const CadastreControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function() {
+      const container = L.DomUtil.create('div', 'cadastre-toggle');
+      container.innerHTML = '<input type="checkbox" id="cadastreCheckbox"><label for="cadastreCheckbox">Cadastre</label>';
+      L.DomEvent.disableClickPropagation(container);
+      const checkbox = container.querySelector('#cadastreCheckbox');
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          cadastre.addTo(map);
+        } else {
+          map.removeLayer(cadastre);
+        }
+      });
+      return container;
+    }
+  });
+  map.addControl(new CadastreControl());
+
+  markersLayer = L.layerGroup().addTo(map);
+
+  // Si des donnees sont arrivees avant l'init de la carte, on les dessine maintenant
+  if (pendingRecords) {
+    redraw(pendingRecords, pendingMappings);
+  }
+}
+
+// Lazy mode : on n'initialise la carte (et donc on ne charge aucune tuile)
+// que lorsque le conteneur devient reellement visible dans le widget.
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      initMap();
+      observer.disconnect();
+    }
+  });
+}, { threshold: 0.01 });
+observer.observe(document.getElementById('map'));
+
+// Filet de securite si l'IntersectionObserver ne se declenche pas (ex. iframe particuliere)
+window.addEventListener('load', () => setTimeout(initMap, 1500));
+
+// ---------- Dessin des marqueurs ----------
 function redraw(records, mappings) {
+  pendingRecords = records;
+  pendingMappings = mappings;
+
+  if (!mapInitialized) return; // sera redessine des que la carte s'initialise
+
   markersLayer.clearLayers();
+  markersByRowId = {};
+
   const emptyMsg = document.getElementById('emptyMsg');
   if (!records || !records.length) {
     emptyMsg.style.display = 'block';
@@ -95,8 +194,6 @@ function redraw(records, mappings) {
   }
 
   const mapped = records.map(r => grist.mapColumnNames(r, mappings) || r);
-  currentMapped = mapped;
-
   const bounds = [];
   let count = 0;
 
@@ -105,25 +202,18 @@ function redraw(records, mappings) {
     const lng = parseFloat(rec.Longitude);
     if (isNaN(lat) || isNaN(lng)) return;
 
-    const marker = L.circleMarker([lat, lng], {
-      radius: 9,
-      color: '#e07b1f',
-      weight: 2,
-      fillColor: '#f5a742',
-      fillOpacity: 0.45,
-      opacity: 0.9
-    });
-
+    const rowId = records[idx].id;
+    const marker = L.circleMarker([lat, lng], markerStyle(rowId === selectedRowId));
     marker.bindPopup(buildPopupHtml(rec));
 
     marker.on('click', () => {
-      const rowId = records[idx].id;
       if (rowId !== undefined) {
         grist.setCursorPos({ rowId }).catch(() => {});
       }
     });
 
     marker.addTo(markersLayer);
+    markersByRowId[rowId] = marker;
     bounds.push([lat, lng]);
     count++;
   });
@@ -135,8 +225,28 @@ function redraw(records, mappings) {
   }
 }
 
+// ---------- Grist : donnees de la table ----------
 grist.onRecords((records, mappings) => {
   redraw(records, mappings);
+});
+
+// ---------- Grist : selection courante -> carte (tableau vers carte) ----------
+grist.onRecord((record, mappings) => {
+  if (!record || !mapInitialized) return;
+  selectedRowId = record.id;
+
+  // Reappliquer le style "selectionne" sur le bon marqueur
+  Object.entries(markersByRowId).forEach(([rowId, marker]) => {
+    const isSelected = String(rowId) === String(selectedRowId);
+    marker.setStyle(markerStyle(isSelected));
+    if (isSelected) marker.bringToFront();
+  });
+
+  const marker = markersByRowId[selectedRowId];
+  if (marker) {
+    map.panTo(marker.getLatLng());
+    marker.openPopup();
+  }
 });
 </script>
 </body>
