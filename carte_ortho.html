@@ -11,18 +11,18 @@
   html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
   #map { width: 100%; height: 100vh; background: #eef1f4; }
 
-  /* Popup compact + transparent */
+  /* Popup compact + fond 75% opaque + texte noir plein */
   .leaflet-popup-content-wrapper {
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.75);
     box-shadow: 0 1px 6px rgba(0,0,0,.25);
   }
-  .leaflet-popup-tip { background: rgba(255, 255, 255, 0.5); }
+  .leaflet-popup-tip { background: rgba(255, 255, 255, 0.75); }
   .leaflet-popup-content { margin: 6px 8px; }
-  .op-popup { font-size: 12px; line-height: 1.35; }
-  .op-popup .row { display: flex; gap: 6px; white-space: nowrap; }
+  .op-popup { font-size: 12px; line-height: 1.35; color: #000; cursor: zoom-in; }
+  .op-popup .row { display: flex; gap: 6px; white-space: nowrap; color: #000; }
   .op-popup .row + .row { margin-top: 1px; }
-  .op-popup .label { color: #555; font-weight: 600; }
+  .op-popup .label { color: #000; font-weight: 700; }
   .op-popup .label::after { content: ":"; }
 
   /* Case a cocher cadastre, compacte, toujours visible */
@@ -52,20 +52,25 @@
 <div class="op-empty" id="emptyMsg">Aucune coordonnée à afficher</div>
 
 <script>
+// ---------- Reglage du zoom max (au-dela, tuiles IGN indisponibles -> page blanche) ----------
+const MAX_ZOOM = 19;
+
 // ---------- Configuration Grist ----------
+// Ordre du popup : Popup1, Popup2, Popup3 (sans libelle), Popup4 "Logements total", Popup5 "dont LS"
 const COLUMN_MAPPING = [
   { name: "Latitude", title: "Latitude", type: "Numeric", strictType: true },
   { name: "Longitude", title: "Longitude", type: "Numeric", strictType: true },
   { name: "Popup1", title: "Popup - champ 1", optional: true, type: "Any" },
   { name: "Popup2", title: "Popup - champ 2", optional: true, type: "Any" },
-  { name: "Popup3", title: "Popup - Logements total", optional: true, type: "Any" },
-  { name: "Popup4", title: "Popup - dont LS", optional: true, type: "Any" }
+  { name: "Popup3", title: "Popup - champ 3", optional: true, type: "Any" },
+  { name: "Popup4", title: "Popup - Logements total", optional: true, type: "Any" },
+  { name: "Popup5", title: "Popup - dont LS", optional: true, type: "Any" }
 ];
 
-// Libelles fixes affiches dans le popup pour les 2 dernieres colonnes mappees
+// Libelles fixes affiches dans le popup (les champs absents de cette liste s'affichent sans libelle)
 const FIXED_LABELS = {
-  Popup3: "Logements total",
-  Popup4: "dont LS"
+  Popup4: "Logements total",
+  Popup5: "dont LS"
 };
 
 grist.ready({
@@ -90,8 +95,8 @@ function escapeHtml(str) {
   }[c]));
 }
 
-function buildPopupHtml(rec) {
-  const keys = ['Popup1', 'Popup2', 'Popup3', 'Popup4'];
+function buildPopupHtml(rec, lat, lng) {
+  const keys = ['Popup1', 'Popup2', 'Popup3', 'Popup4', 'Popup5'];
   let rows = '';
   keys.forEach(key => {
     const val = rec[key];
@@ -102,7 +107,8 @@ function buildPopupHtml(rec) {
       : `<div class="row">${escapeHtml(val)}</div>`;
   });
   if (!rows) rows = '<div class="row">—</div>';
-  return `<div class="op-popup">${rows}</div>`;
+  // data-lat/data-lng utilises par le double-clic pour zoomer au max sur ce point
+  return `<div class="op-popup" data-lat="${lat}" data-lng="${lng}" title="Double-clic pour zoomer">${rows}</div>`;
 }
 
 function markerStyle(selected) {
@@ -111,27 +117,48 @@ function markerStyle(selected) {
     : { radius: 9, color: '#e07b1f', weight: 2, fillColor: '#f5a742', fillOpacity: 0.45, opacity: 0.9 };
 }
 
+function isNullIsland(lat, lng) {
+  // Filtre les coordonnees (0,0) / quasi-zero (au large de l'Afrique)
+  return Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001;
+}
+
 // ---------- Initialisation carte (lazy) ----------
 function initMap() {
   if (mapInitialized) return;
   mapInitialized = true;
 
-  map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([46.6, 2.4], 6);
+  map = L.map('map', { zoomControl: true, preferCanvas: true, maxZoom: MAX_ZOOM }).setView([46.6, 2.4], 6);
 
   // Fond orthophoto IGN (Geoplateforme, sans cle)
   L.tileLayer(
     'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
     '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM' +
     '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg',
-    { attribution: 'IGN-F/Geoportail', maxZoom: 20, tileSize: 256, updateWhenIdle: true, keepBuffer: 1 }
+    {
+      attribution: 'IGN-F/Geoportail',
+      maxZoom: MAX_ZOOM,
+      maxNativeZoom: MAX_ZOOM,
+      tileSize: 256,
+      updateWhenIdle: true,
+      keepBuffer: 1
+    }
   ).addTo(map);
 
-  // Calque cadastre IGN (Parcellaire Express) - cree mais pas ajoute par defaut
+  // Calque cadastre IGN (Parcellaire Express) - style correct = "PCI vecteur" (pas "bdparcellaire")
   cadastre = L.tileLayer(
     'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
-    '&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&STYLE=bdparcellaire&TILEMATRIXSET=PM' +
-    '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',
-    { attribution: 'IGN-F/Cadastre', maxZoom: 20, tileSize: 256, opacity: 0.8, updateWhenIdle: true, keepBuffer: 1 }
+    '&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&STYLE=' + encodeURIComponent('PCI vecteur') +
+    '&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',
+    {
+      attribution: 'IGN-F/Cadastre (DGFiP)',
+      maxZoom: MAX_ZOOM,
+      maxNativeZoom: MAX_ZOOM,
+      tileSize: 256,
+      opacity: 0.8,
+      updateWhenIdle: true,
+      keepBuffer: 1,
+      zIndex: 5
+    }
   );
 
   // Case a cocher cadastre (controle custom, compact, direct)
@@ -201,15 +228,27 @@ function redraw(records, mappings) {
     const lat = parseFloat(rec.Latitude);
     const lng = parseFloat(rec.Longitude);
     if (isNaN(lat) || isNaN(lng)) return;
+    if (isNullIsland(lat, lng)) return; // pas de marqueur pour (0,0)
 
     const rowId = records[idx].id;
     const marker = L.circleMarker([lat, lng], markerStyle(rowId === selectedRowId));
-    marker.bindPopup(buildPopupHtml(rec));
+    marker.bindPopup(buildPopupHtml(rec, lat, lng));
 
     marker.on('click', () => {
       if (rowId !== undefined) {
         grist.setCursorPos({ rowId }).catch(() => {});
       }
+    });
+
+    // Double-clic dans le popup -> zoom au maximum disponible sur ce point
+    marker.on('popupopen', (e) => {
+      const el = e.popup.getElement();
+      if (!el) return;
+      const content = el.querySelector('.op-popup');
+      if (!content) return;
+      content.ondblclick = () => {
+        map.setView([lat, lng], MAX_ZOOM);
+      };
     });
 
     marker.addTo(markersLayer);
