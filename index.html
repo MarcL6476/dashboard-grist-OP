@@ -92,7 +92,8 @@ grist.ready({
     col('StatutsBlocageLogs','Statuts blocage – logements (6 colonnes)',   'Numeric',{allowMultiple:true,optional:false}),
     col('FondFriche',        'Fond friche (€)',                            'Any'),
     col('TEL',               'TEL (€)',                                    'Any'),
-    col('FinHDC',            'Financements h.d.c. total (€)',              'Any'),
+    col('FinHDC',            'Financement hors droit commun collectivités (€)', 'Any'),
+    col('FinHDCEtat',        'Financement hors droit commun État (€)',     'Any'),
     col('AnneesLivraison',   'Années livraison (liste)',                   'Any'),
     col('AnneesLancement',   'Années lancement travaux (liste)',           'Any'),
     col('LogementsLiv',      'Logements / livraison (liste)',              'Any'),
@@ -124,30 +125,24 @@ function normalizeLabel(s){
     .trim();
 }
 
-// Couleurs fixes par nom de statut (indépendant de l'ordre des colonnes mappées).
-// Ajouter/modifier une entrée ici met à jour la couleur sans se soucier des accents.
-const STATUS_COLORS_RAW={
-  // Opérations
-  'Nombre d\u2019opérations en déroulement « normal »':'#7CB342',
-  'Nombre d\u2019opérations débloquées par la Task Force':'#AED581',
-  'Nombre d\u2019opérations bloquées avec feuille de route Task Force':'#FB8C00',
-  'Nombre d\u2019opérations bloquées par un recours':'#E53935',
-  // Logements
-  'Nombre de logements en déroulement « normal »':'#7CB342',
-  'Nombre de logements débloqués par la Task Force':'#AED581',
-  'Nombre de logements bloqués avec feuille de route Task Force':'#FB8C00',
-  'Nombre de logements bloqués par un recours':'#E53935',
-  // Alias éventuel utilisé côté source
-  'Nombre total de logements débloqués depuis Mars 2023':'#AED581',
-};
-const STATUS_COLORS={};
-Object.entries(STATUS_COLORS_RAW).forEach(([k,v])=>{STATUS_COLORS[normalizeLabel(k)]=v;});
+// Couleurs par mot-clé déclencheur : dès que le libellé (normalisé) CONTIENT
+// le mot-clé, la couleur associée s'applique. Plus besoin que le nom soit
+// identique au caractère près — robuste aux variations de formulation.
+// Ordre important : le 1er mot-clé qui matche l'emporte (du plus spécifique
+// au plus générique) — "feuille de route" doit être testé avant "débloqué".
+const STATUS_KEYWORDS=[
+  {kw:'recours',            color:'#E53935'}, // rouge
+  {kw:'feuille de route',   color:'#FB8C00'}, // orange
+  {kw:'debloque',           color:'#AED581'}, // vert clair
+  {kw:'normal',             color:'#7CB342'}, // vert foncé
+];
 
 function resolveColors(labels){
   let fallbackIdx=0;
   return labels.map(lbl=>{
-    const hit=STATUS_COLORS[normalizeLabel(lbl)];
-    if(hit) return hit;
+    const norm=normalizeLabel(lbl);
+    const hit=STATUS_KEYWORDS.find(({kw})=>norm.includes(kw));
+    if(hit) return hit.color;
     const c=PPIE[fallbackIdx%PPIE.length];
     fallbackIdx++;
     return c;
@@ -187,7 +182,8 @@ grist.onRecord((record,mappings)=>{
   $('headerBadges').innerHTML=[
     {label:'Fond friche',val:m.FondFriche},
     {label:'TEL',val:m.TEL},
-    {label:'Financements h.d.c.',val:m.FinHDC},
+    {label:'Financement hors droit commun collectivités',val:m.FinHDC},
+    {label:'Financement hors droit commun État',val:m.FinHDCEtat},
   ].map(i=>`<span class="badge ${isTruthy(i.val)?'on':''}">${i.label} : ${formatEuro(i.val)}</span>`).join('');
 
   renderBloc2023(m);
