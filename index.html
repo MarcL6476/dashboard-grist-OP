@@ -39,7 +39,6 @@
     <div class="header-top">
       <h1 id="titre">Sélectionnez une ligne</h1>
       <div class="header-badges" id="headerBadges"></div>
-      <span class="maj" id="majLine">Mise à jour —</span>
     </div>
   </header>
 
@@ -74,8 +73,7 @@ if (window.ChartDataLabels) Chart.register(window.ChartDataLabels);
 const col=(name,title,type,extra={})=>({name,title,type,optional:true,...extra});
 grist.ready({
   columns:[
-    col('Libelle',           'Libellé (commune)',                          'Text'),
-    col('DerniereMaJ',       'Date dernière mise à jour',                  'DateTime'),
+    col('Libelle',           'Libellé (commune)',                          'Any'),
     col('NbOperations',      'Nb opérations vivantes',                     'Numeric'),
     col('NbOps2023',         'Nb opérations recensées depuis 2023',        'Numeric'),
     col('NbLogs2023',        'Nb logements total (depuis 2023)',           'Numeric'),
@@ -113,6 +111,21 @@ grist.ready({
 
 const PBAR='#4C6B7A';
 const PPIE=['#7CB342','#AED581','#FB8C00','#E53935','#FFEB3B','#64B5F6','#8C6A8F','#C99A3D'];
+// Couleurs fixes par nom de statut (indépendant de l'ordre des colonnes mappées)
+const STATUS_COLORS={
+  'Nombre de logements bloqués par un recours':'#E53935',
+  'Nombre de logements bloqués avec feuille de route Task Force':'#FB8C00',
+  'Nombre total de logements débloqués depuis Mars 2023':'#7CB342',
+};
+function resolveColors(labels){
+  let fallbackIdx=0;
+  return labels.map(lbl=>{
+    if(STATUS_COLORS[lbl]) return STATUS_COLORS[lbl];
+    const c=PPIE[fallbackIdx%PPIE.length];
+    fallbackIdx++;
+    return c;
+  });
+}
 const charts={};
 const $=id=>document.getElementById(id);
 const n=v=>typeof v==='number'?v:0;
@@ -135,7 +148,6 @@ grist.onRecord((record,mappings)=>{
   const m=grist.mapColumnNames(record);
   if(!m){toggle(false);return;}
   toggle(true);
-  $('majLine').textContent='Mise à jour — '+formatDate(m.DerniereMaJ);
   $('titre').textContent=m.Libelle||'Opération';
 
   // Titres dynamiques avec gras
@@ -183,10 +195,11 @@ function renderIndicateurs(m,mappings){
   });
 }
 
-function makePie(canvasId,vals,labels){
+function makePie(canvasId,vals,labels,colors){
   destroy(canvasId);
+  const backgroundColor=colors||PPIE.slice(0,vals.length);
   charts[canvasId]=new Chart($(canvasId),{type:'pie',
-    data:{labels,datasets:[{data:vals,backgroundColor:PPIE.slice(0,vals.length)}]},
+    data:{labels,datasets:[{data:vals,backgroundColor}]},
     options:pieOpts(),
   });
 }
@@ -195,7 +208,8 @@ function renderBlocage(m,mappings){
   const note=$('noteBlocage'), vals=toArr(m.StatutsBlocage), ids=toArr(mappings&&mappings.StatutsBlocage);
   if(!vals.length){note.textContent='Mappez vos colonnes de blocage opérations.';destroy('chartBlocage');return;}
   note.textContent='';
-  makePie('chartBlocage',vals,ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1)));
+  const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
+  makePie('chartBlocage',vals,labels,resolveColors(labels));
 }
 
 function renderBlocageLogs(m,mappings){
