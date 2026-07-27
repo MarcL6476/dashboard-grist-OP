@@ -111,16 +111,43 @@ grist.ready({
 
 const PBAR='#4C6B7A';
 const PPIE=['#7CB342','#AED581','#FB8C00','#E53935','#FFEB3B','#64B5F6','#8C6A8F','#C99A3D'];
-// Couleurs fixes par nom de statut (indépendant de l'ordre des colonnes mappées)
-const STATUS_COLORS={
-  'Nombre de logements bloqués par un recours':'#E53935',
+
+// Normalise un libellé pour le rendre insensible aux accents, à la casse,
+// aux apostrophes/guillemets typographiques et à la ponctuation.
+function normalizeLabel(s){
+  return String(s||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase()
+    .replace(/['’ʼ]/g,"'")
+    .replace(/[«»"]/g,'')
+    .replace(/[^a-z0-9']+/g,' ')
+    .trim();
+}
+
+// Couleurs fixes par nom de statut (indépendant de l'ordre des colonnes mappées).
+// Ajouter/modifier une entrée ici met à jour la couleur sans se soucier des accents.
+const STATUS_COLORS_RAW={
+  // Opérations
+  'Nombre d\u2019opérations en déroulement « normal »':'#7CB342',
+  'Nombre d\u2019opérations débloquées par la Task Force':'#AED581',
+  'Nombre d\u2019opérations bloquées avec feuille de route Task Force':'#FB8C00',
+  'Nombre d\u2019opérations bloquées par un recours':'#E53935',
+  // Logements
+  'Nombre de logements en déroulement « normal »':'#7CB342',
+  'Nombre de logements débloqués par la Task Force':'#AED581',
   'Nombre de logements bloqués avec feuille de route Task Force':'#FB8C00',
-  'Nombre total de logements débloqués depuis Mars 2023':'#7CB342',
+  'Nombre de logements bloqués par un recours':'#E53935',
+  // Alias éventuel utilisé côté source
+  'Nombre total de logements débloqués depuis Mars 2023':'#AED581',
 };
+const STATUS_COLORS={};
+Object.entries(STATUS_COLORS_RAW).forEach(([k,v])=>{STATUS_COLORS[normalizeLabel(k)]=v;});
+
 function resolveColors(labels){
   let fallbackIdx=0;
   return labels.map(lbl=>{
-    if(STATUS_COLORS[lbl]) return STATUS_COLORS[lbl];
+    const hit=STATUS_COLORS[normalizeLabel(lbl)];
+    if(hit) return hit;
     const c=PPIE[fallbackIdx%PPIE.length];
     fallbackIdx++;
     return c;
@@ -218,7 +245,8 @@ function renderBlocageLogs(m,mappings){
   const fb=n(m.FuturBlocage);
   note.style.cssText=fb>0?'color:#C05A00;font-size:13px;font-weight:700;margin-top:5px;':'';
   note.textContent=fb>0?`${fb} futur blocage${fb>1?'s':''} détecté${fb>1?'s':''}`:'';
-  makePie('chartBlocageLogs',vals,ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1)));
+  const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
+  makePie('chartBlocageLogs',vals,labels,resolveColors(labels));
 }
 
 function renderTableauAnnees(m){
