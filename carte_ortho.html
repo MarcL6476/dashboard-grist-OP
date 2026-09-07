@@ -68,7 +68,8 @@ const FIXED_LABELS = {
 
 grist.ready({
   columns: COLUMN_MAPPING,
-  requiredAccess: "read table"
+  requiredAccess: "read table",
+  allowSelectBy: true
 });
 
 let map = null;
