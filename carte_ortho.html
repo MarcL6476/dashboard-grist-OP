@@ -2,182 +2,268 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<title>Carte opérations - Orthophoto/Cadastre</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Carte Parcelles</title>
-
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
-
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
-  #map { height: 100%; width: 100%; }
-  .leaflet-popup-content { font-size: 13px; line-height: 1.6; min-width: 180px; }
-  .leaflet-popup-content b { color: #1a5fb4; font-size: 14px; }
-  .popup-commune { color: #666; font-size: 12px; }
-  .controle-cadastre {
-    background: white;
-    padding: 6px 10px;
-    border-radius: 4px;
-    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
-    font-size: 13px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  #map { width: 100%; height: 100vh; background: #eef1f4; }
+  .leaflet-popup-content-wrapper {
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.75);
+    box-shadow: 0 1px 6px rgba(0,0,0,.25);
   }
-  .controle-cadastre label {
-    cursor: pointer;
+  .leaflet-popup-tip { background: rgba(255, 255, 255, 0.75); }
+  .leaflet-popup-content { margin: 6px 8px; }
+  .op-popup { font-size: 12px; line-height: 1.35; color: #000; cursor: zoom-in; }
+  .op-popup .row { display: flex; gap: 6px; white-space: nowrap; color: #000; }
+  .op-popup .row + .row { margin-top: 1px; }
+  .op-popup .label { color: #000; font-weight: 700; }
+  .op-popup .label::after { content: ":"; }
+  .cadastre-toggle {
+    background: rgba(255,255,255,0.9);
+    padding: 5px 8px;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.3);
+    font-size: 12px;
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin: 0;
-    white-space: nowrap;
+    gap: 5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .cadastre-toggle input { margin: 0; cursor: pointer; }
+  .op-empty {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: #fff; padding: 6px 14px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.2);
+    font-size: 13px; color: #444; z-index: 1000; display: none;
   }
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div class="op-empty" id="emptyMsg">Aucune coordonnée à afficher</div>
 
 <script>
-// ============================================================
-// NOMS DES COLONNES — adapte si besoin
-// ============================================================
-const COL_LAT       = "latitude";
-const COL_LON       = "longitude";
-const COL_TITRE     = "PARCELLE_ID";
-const COL_COMMUNE   = "Commune";
-const COL_LOCALISATION = "Localisation";
+const MAX_ZOOM = 19;
+const FIT_MAX_ZOOM = 13; // plafond du zoom automatique (fitBounds), réduit pour éviter un zoom trop fort sur sélection
 
-const CENTRE_DEFAUT = [43.38, -1.55];
-const ZOOM_DEFAUT   = 11;
-// ============================================================
+const COLUMN_MAPPING = [
+  { name: "Latitude", title: "Latitude", type: "Numeric", strictType: true },
+  { name: "Longitude", title: "Longitude", type: "Numeric", strictType: true },
+  { name: "Popup1", title: "Popup - champ 1", optional: true, type: "Any" },
+  { name: "Popup2", title: "Popup - champ 2", optional: true, type: "Any" },
+  { name: "Popup3", title: "Popup - champ 3", optional: true, type: "Any" },
+  { name: "Popup4", title: "Popup - Logements total", optional: true, type: "Any" },
+  { name: "Popup5", title: "Popup - dont LS", optional: true, type: "Any" }
+];
 
-let map, groupeMarqueurs, coucheCadastre;
-let marqueurs = {};
-let rowIdSelectionne = null;
-
-const STYLE_NORMAL = {
-  radius: 6,
-  color: "#1a5fb4",
-  weight: 1.5,
-  fillColor: "#4d8fdc",
-  fillOpacity: 0.55,
-  opacity: 0.75
+const FIXED_LABELS = {
+  Popup4: "Logements total",
+  Popup5: "dont LS"
 };
 
-const STYLE_SELECTIONNE = {
-  radius: 7,
-  color: "#a00",
-  weight: 1.5,
-  fillColor: "#e53e3e",
-  fillOpacity: 0.7,
-  opacity: 0.9
-};
+grist.ready({
+  columns: COLUMN_MAPPING,
+  requiredAccess: "read table"
+});
 
-function initCarte() {
-  map = L.map("map").setView(CENTRE_DEFAUT, ZOOM_DEFAUT);
+let map = null;
+let cadastre = null;
+let markersLayer = null;
+let markersByRowId = {};
+let selectedRowId = null;
+let pendingRecords = null;
+let pendingMappings = null;
+let mapInitialized = false;
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function buildPopupHtml(rec, lat, lng) {
+  const keys = ['Popup1', 'Popup2', 'Popup3', 'Popup4', 'Popup5'];
+  let rows = '';
+  keys.forEach(key => {
+    const val = rec[key];
+    if (val === undefined || val === null || val === '') return;
+    const label = FIXED_LABELS[key];
+    rows += label
+      ? `<div class="row"><span class="label">${label}</span><span>${escapeHtml(val)}</span></div>`
+      : `<div class="row">${escapeHtml(val)}</div>`;
+  });
+  if (!rows) rows = '<div class="row">—</div>';
+  return `<div class="op-popup" data-lat="${lat}" data-lng="${lng}" title="Double-clic pour zoomer">${rows}</div>`;
+}
+
+function markerStyle(selected) {
+  return selected
+    ? { radius: 12, color: '#c2540c', weight: 3, fillColor: '#f5a742', fillOpacity: 0.65, opacity: 1 }
+    : { radius: 9, color: '#e07b1f', weight: 2, fillColor: '#f5a742', fillOpacity: 0.45, opacity: 0.9 };
+}
+
+function isNullIsland(lat, lng) {
+  return Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001;
+}
+
+function initMap() {
+  if (mapInitialized) return;
+  mapInitialized = true;
+
+  map = L.map('map', { zoomControl: true, preferCanvas: true, maxZoom: MAX_ZOOM }).setView([46.6, 2.4], 6);
   map.attributionControl.setPrefix(false); // retire le logo/drapeau Leaflet des crédits
 
-  // Fond de carte — Orthophoto IGN Géoplateforme
   L.tileLayer(
-    "https://data.geopf.fr/wmts?layer=ORTHOIMAGERY.ORTHOPHOTOS&style=normal&tilematrixset=PM&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/jpeg&TileMatrix={z}&TileCol={x}&TileRow={y}",
-    { minZoom: 0, maxZoom: 22, maxNativeZoom: 19, attribution: "Orthophoto © IGN" }
+    'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
+    '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM' +
+    '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg',
+    {
+      attribution: 'IGN-F/Geoportail',
+      maxZoom: MAX_ZOOM,
+      maxNativeZoom: MAX_ZOOM,
+      tileSize: 256,
+      updateWhenIdle: true,
+      keepBuffer: 1
+    }
   ).addTo(map);
 
-  // Couche cadastre DGFiP en superposition transparente
-  coucheCadastre = L.tileLayer(
-    "https://data.geopf.fr/wmts?layer=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&style=PCI%20vecteur&tilematrixset=PM_0_19&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/png&TileMatrix={z}&TileCol={x}&TileRow={y}",
-    { minZoom: 0, maxZoom: 22, maxNativeZoom: 19, attribution: "Cadastre © DGFiP", opacity: 0.75 }
+  cadastre = L.tileLayer(
+    'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile' +
+    '&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&STYLE=' + encodeURIComponent('PCI vecteur') +
+    '&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',
+    {
+      attribution: 'IGN-F/Cadastre (DGFiP)',
+      maxZoom: MAX_ZOOM,
+      maxNativeZoom: MAX_ZOOM,
+      tileSize: 256,
+      opacity: 0.8,
+      updateWhenIdle: true,
+      keepBuffer: 1,
+      zIndex: 5
+    }
   );
 
-  groupeMarqueurs = L.layerGroup().addTo(map);
-
-  const ControleCadastre = L.Control.extend({
-    options: { position: "topright" },
-    onAdd() {
-      const div = L.DomUtil.create("div", "controle-cadastre");
-      div.innerHTML = `<label><input type="checkbox" id="toggle-cadastre"> Cadastre</label>`;
-      L.DomEvent.disableClickPropagation(div);
-      return div;
+  const CadastreControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function() {
+      const container = L.DomUtil.create('div', 'cadastre-toggle');
+      container.innerHTML = '<input type="checkbox" id="cadastreCheckbox"><label for="cadastreCheckbox">Cadastre</label>';
+      L.DomEvent.disableClickPropagation(container);
+      const checkbox = container.querySelector('#cadastreCheckbox');
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          cadastre.addTo(map);
+        } else {
+          map.removeLayer(cadastre);
+        }
+      });
+      return container;
     }
   });
-  map.addControl(new ControleCadastre());
+  map.addControl(new CadastreControl());
 
-  document.getElementById("toggle-cadastre").addEventListener("change", e => {
-    if (e.target.checked) coucheCadastre.addTo(map);
-    else map.removeLayer(coucheCadastre);
-  });
-}
+  markersLayer = L.layerGroup().addTo(map);
 
-function construirePopup(r) {
-  const titre = r[COL_TITRE] || "Parcelle";
-  const commune = r[COL_COMMUNE] || "";
-  const localisation = r[COL_LOCALISATION] || "";
-  return `<b>${titre}</b><br>${localisation}<br><span class="popup-commune">${commune}</span>`;
-}
-
-function appliquerSelectionVisuelle(rowId) {
-  Object.values(marqueurs).forEach(m => m.setStyle(STYLE_NORMAL));
-  rowIdSelectionne = rowId;
-  if (rowId && marqueurs[rowId]) {
-    marqueurs[rowId].setStyle(STYLE_SELECTIONNE);
-    marqueurs[rowId].bringToFront();
+  if (pendingRecords) {
+    redraw(pendingRecords, pendingMappings);
   }
 }
 
-function majMarqueurs(records) {
-  groupeMarqueurs.clearLayers();
-  marqueurs = {};
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      initMap();
+      observer.disconnect();
+    }
+  });
+}, { threshold: 0.01 });
+observer.observe(document.getElementById('map'));
+
+window.addEventListener('load', () => setTimeout(initMap, 1500));
+
+function redraw(records, mappings) {
+  pendingRecords = records;
+  pendingMappings = mappings;
+
+  if (!mapInitialized) return;
+
+  markersLayer.clearLayers();
+  markersByRowId = {};
+
+  const emptyMsg = document.getElementById('emptyMsg');
+  if (!records || !records.length) {
+    emptyMsg.style.display = 'block';
+    return;
+  }
+
+  const mapped = records.map(r => grist.mapColumnNames(r, mappings) || r);
   const bounds = [];
+  let count = 0;
 
-  records.forEach(r => {
-    const lat = parseFloat(r[COL_LAT]);
-    const lon = parseFloat(r[COL_LON]);
-    if (!lat || !lon || isNaN(lat) || isNaN(lon)) return;
+  mapped.forEach((rec, idx) => {
+    const lat = parseFloat(rec.Latitude);
+    const lng = parseFloat(rec.Longitude);
+    if (isNaN(lat) || isNaN(lng)) return;
+    if (isNullIsland(lat, lng)) return;
 
-    const estSelectionne = (r.id === rowIdSelectionne);
-    const marker = L.circleMarker([lat, lon], estSelectionne ? STYLE_SELECTIONNE : STYLE_NORMAL);
-    marker.bindPopup(construirePopup(r));
+    const rowId = records[idx].id;
+    const marker = L.circleMarker([lat, lng], markerStyle(rowId === selectedRowId));
+    marker.bindPopup(buildPopupHtml(rec, lat, lng));
 
-    marker.on("click", () => {
-      appliquerSelectionVisuelle(r.id);
-      marker.openPopup();
-      map.setView(marker.getLatLng(), Math.max(map.getZoom(), 18));
-      grist.setCursorPos({ rowId: r.id });
+    marker.on('click', () => {
+      if (rowId !== undefined) {
+        grist.setCursorPos({ rowId }).catch(() => {});
+      }
     });
 
-    marker.addTo(groupeMarqueurs);
-    marqueurs[r.id] = marker;
-    bounds.push([lat, lon]);
+    marker.on('popupopen', (e) => {
+      const el = e.popup.getElement();
+      if (!el) return;
+      const content = el.querySelector('.op-popup');
+      if (!content) return;
+      content.ondblclick = () => {
+        map.setView([lat, lng], MAX_ZOOM);
+      };
+    });
+
+    marker.addTo(markersLayer);
+    markersByRowId[rowId] = marker;
+    bounds.push([lat, lng]);
+    count++;
   });
 
-  if (bounds.length > 0 && rowIdSelectionne === null) {
-    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+  emptyMsg.style.display = count === 0 ? 'block' : 'none';
+
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: FIT_MAX_ZOOM });
   }
 }
 
-// ============================================================
-// API Grist
-// ============================================================
-grist.ready({ requiredAccess: "read table", allowSelectBy: true });
-
-grist.onRecords(records => {
-  if (!map) initCarte();
-  majMarqueurs(records);
+grist.onRecords((records, mappings) => {
+  redraw(records, mappings);
 });
 
-grist.onRecord(record => {
-  if (!map) initCarte();
-  if (!record) return;
-  appliquerSelectionVisuelle(record.id);
-  if (marqueurs[record.id]) {
-    const latlng = marqueurs[record.id].getLatLng();
-    map.setView(latlng, Math.max(map.getZoom(), 15));
-    marqueurs[record.id].openPopup();
+grist.onRecord((record, mappings) => {
+  if (!record || !mapInitialized) return;
+  selectedRowId = record.id;
+
+  Object.entries(markersByRowId).forEach(([rowId, marker]) => {
+    const isSelected = String(rowId) === String(selectedRowId);
+    marker.setStyle(markerStyle(isSelected));
+    if (isSelected) marker.bringToFront();
+  });
+
+  const marker = markersByRowId[selectedRowId];
+  if (marker) {
+    map.panTo(marker.getLatLng());
+    marker.openPopup();
   }
 });
-
-window.addEventListener("load", () => { if (!map) initCarte(); });
 </script>
 </body>
 </html>
