@@ -49,6 +49,7 @@
 <script>
 const MAX_ZOOM = 19;
 const FIT_MAX_ZOOM = 13; // plafond du zoom automatique (fitBounds), réduit pour éviter un zoom trop fort sur sélection
+const SELECT_ZOOM = 17; // zoom appliqué quand on sélectionne une ligne dans le tableau
 
 const COLUMN_MAPPING = [
   { name: "Latitude", title: "Latitude", type: "Numeric", strictType: true },
@@ -260,7 +261,7 @@ grist.onRecord((record, mappings) => {
 
   const marker = markersByRowId[selectedRowId];
   if (marker) {
-    map.panTo(marker.getLatLng());
+    map.setView(marker.getLatLng(), Math.max(map.getZoom(), SELECT_ZOOM));
     marker.openPopup();
   }
 });
