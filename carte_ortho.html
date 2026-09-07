@@ -78,12 +78,11 @@ function initCarte() {
   map = L.map("map").setView(CENTRE_DEFAUT, ZOOM_DEFAUT);
   map.attributionControl.setPrefix(false); // retire le logo/drapeau Leaflet des crédits
 
-  // Fond de carte épuré — Carto Positron
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-    maxZoom: 22,
-    subdomains: "abcd",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  }).addTo(map);
+  // Fond de carte — Orthophoto IGN Géoplateforme
+  L.tileLayer(
+    "https://data.geopf.fr/wmts?layer=ORTHOIMAGERY.ORTHOPHOTOS&style=normal&tilematrixset=PM&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/jpeg&TileMatrix={z}&TileCol={x}&TileRow={y}",
+    { minZoom: 0, maxZoom: 22, maxNativeZoom: 19, attribution: "Orthophoto © IGN" }
+  ).addTo(map);
 
   // Couche cadastre DGFiP en superposition transparente
   coucheCadastre = L.tileLayer(
