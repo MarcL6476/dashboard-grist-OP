@@ -137,10 +137,21 @@ const STATUS_KEYWORDS=[
   {kw:'normal',             color:'#7CB342'}, // vert foncé
 ];
 
-function resolveColors(labels){
+// Couleurs manuelles : priorité absolue sur les mots-clés ci-dessus.
+// Clé = identifiant de colonne Grist tel qu'il apparaît dans le mapping
+// (ex: "Normal", "Debloque", "Feuille_de_route"...), valeur = couleur hex.
+// Ajoute/modifie librement une ligne par catégorie que tu veux fixer.
+const COLOR_OVERRIDES={
+  // 'logs_non_livres_bloques': '#E53935',
+};
+
+function resolveColors(labels,ids){
   let fallbackIdx=0;
-  return labels.map(lbl=>{
+  return labels.map((lbl,i)=>{
+    const rawId=ids&&ids[i];
+    if(rawId && COLOR_OVERRIDES[rawId]) return COLOR_OVERRIDES[rawId];
     const norm=normalizeLabel(lbl);
+    if(COLOR_OVERRIDES[norm]) return COLOR_OVERRIDES[norm];
     const hit=STATUS_KEYWORDS.find(({kw})=>norm.includes(kw));
     if(hit) return hit.color;
     const c=PPIE[fallbackIdx%PPIE.length];
@@ -232,7 +243,7 @@ function renderBlocage(m,mappings){
   if(!vals.length){note.textContent='Mappez vos colonnes de blocage opérations.';destroy('chartBlocage');return;}
   note.textContent='';
   const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
-  makePie('chartBlocage',vals,labels,resolveColors(labels));
+  makePie('chartBlocage',vals,labels,resolveColors(labels,ids));
 }
 
 function renderBlocageLogs(m,mappings){
@@ -242,7 +253,7 @@ function renderBlocageLogs(m,mappings){
   note.style.cssText=fb>0?'color:#C05A00;font-size:13px;font-weight:700;margin-top:5px;':'';
   note.textContent=fb>0?`${fb} futur blocage${fb>1?'s':''} détecté${fb>1?'s':''}`:'';
   const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
-  makePie('chartBlocageLogs',vals,labels,resolveColors(labels));
+  makePie('chartBlocageLogs',vals,labels,resolveColors(labels,ids));
 }
 
 function renderTableauAnnees(m){
