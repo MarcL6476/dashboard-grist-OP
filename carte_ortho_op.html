@@ -49,36 +49,6 @@
     color: #444;
   }
   .legende-swatch { width: 13px; height: 13px; border: 1px solid rgba(0,0,0,0.3); flex: none; }
-  /* --- Panneau compteur OP --- */
-  .panneau-stats-control {
-    background: rgba(255, 255, 255, 0.75);
-    padding: 8px 12px;
-    border-radius: 4px;
-    box-shadow: 0 1px 5px rgba(0,0,0,0.3);
-    font-size: 13px;
-    line-height: 1.5;
-    min-width: 190px;
-    margin: 10px;
-  }
-  .panneau-stats-control b {
-    display: block;
-    margin-bottom: 4px;
-    border-bottom: 1px solid rgba(0,0,0,0.15);
-    padding-bottom: 2px;
-    color: #1a1a1a;
-  }
-  .panneau-stats-control .ligne-commune {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-  }
-  .panneau-stats-control .pastille {
-    display: inline-block;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    margin-right: 6px;
-  }
 </style>
 </head>
 <body>
@@ -123,28 +93,14 @@ const COULEUR_DURETE = { forte: "#E53935", faible: "#7CB342" }; // rouge / vert
 const COULEUR_DURETE_DEFAUT = "#888888";
 // ============================================================
 
-let map, statsControl;
+let map;
 let popupOuvert = null;
 let rowIdSelectionne = null;
 let derniersRecords = [];
 let cartePromise = null;
 
-// --- Couleur par commune (marqueurs OP + pastille panneau compteur) ---
-const COULEURS_COMMUNES = {
-  "ASCAIN":                 { normal: "#4E79A7", intense: "#274B73" },
-  "BIARRITZ":                { normal: "#F28E2B", intense: "#B85E00" },
-  "CIBOURE":                 { normal: "#E15759", intense: "#992A2B" },
-  "HASPARREN":               { normal: "#76B7B2", intense: "#3F7D78" },
-  "HENDAYE":                 { normal: "#59A14F", intense: "#35692D" },
-  "MOUGUERRE":               { normal: "#EDC948", intense: "#B89412" },
-  "SAINT-PEE-SUR-NIVELLE":   { normal: "#B07AA1", intense: "#7A4A6E" },
-  "URRUGNE":                 { normal: "#FF9DA7", intense: "#C94F5C" }
-};
-const COULEUR_PAR_DEFAUT = { normal: "#888888", intense: "#444444" };
-
-function couleursCommune(commune) {
-  return COULEURS_COMMUNES[String(commune || "").toUpperCase()] || COULEUR_PAR_DEFAUT;
-}
+// --- Couleur unique pour tous les marqueurs OP (plus de distinction par commune) ---
+const COULEUR_OP = { normal: "#1a5fb4", intense: "#0d3b73" };
 
 // ============================================================
 // Calques "paresseux" : le fichier (GeoJSON, etc.) n'est téléchargé qu'au premier clic
@@ -368,21 +324,6 @@ async function initCarte() {
       idsCalque.forEach(id => map.setLayoutProperty(id, "visibility", "none"));
     }
   });
-
-  // --- Contrôle du compteur OP (haut gauche) ---
-  class ControleStats {
-    onAdd(mapInstance) {
-      this._map = mapInstance;
-      this._div = document.createElement("div");
-      this._div.className = "maplibregl-ctrl panneau-stats-control";
-      this._div.id = "panneau-stats";
-      this._div.innerHTML = "Chargement...";
-      return this._div;
-    }
-    onRemove() { this._div.remove(); this._map = undefined; }
-  }
-  statsControl = new ControleStats();
-  map.addControl(statsControl, "top-left");
 }
 
 function assurerCarte() {
@@ -403,29 +344,6 @@ function ouvrirPopup(rowId, coordonnees, html) {
   popupOuvert = new maplibregl.Popup().setLngLat(coordonnees).setHTML(html).addTo(map);
 }
 
-function calculerStats(records) {
-  const statsParCommune = {};
-  records.forEach(r => {
-    const commune = r[COL_COMMUNE] || "Inconnu";
-    if (!statsParCommune[commune]) statsParCommune[commune] = { enCours: 0 };
-    statsParCommune[commune].enCours++;
-  });
-  return statsParCommune;
-}
-
-function afficherPanneau(statsParCommune) {
-  const panneau = document.getElementById("panneau-stats");
-  if (!panneau) return;
-  let html = "<b>Opérations en cours</b>";
-  Object.entries(statsParCommune)
-    .sort((a, b) => b[1].enCours - a[1].enCours)
-    .forEach(([commune, s]) => {
-      const couleur = couleursCommune(commune).normal;
-      html += `<div class="ligne-commune"><span><span class="pastille" style="background:${couleur}"></span>${commune}</span><span>${s.enCours}</span></div>`;
-    });
-  panneau.innerHTML = html;
-}
-
 function construireGeoJSON(records) {
   const features = [];
   let featureSelectionnee = null;
@@ -435,8 +353,6 @@ function construireGeoJSON(records) {
     const lon = parseFloat(r[COL_LON]);
     if (!lat || !lon || isNaN(lat) || isNaN(lon)) return;
 
-    const commune = r[COL_COMMUNE];
-    const couleurs = couleursCommune(commune);
     const estSelectionne = (r.id === rowIdSelectionne);
 
     const feature = {
@@ -445,8 +361,8 @@ function construireGeoJSON(records) {
       properties: {
         rowId: r.id,
         selectionne: estSelectionne,
-        couleurNormal: couleurs.normal,
-        couleurIntense: couleurs.intense,
+        couleurNormal: COULEUR_OP.normal,
+        couleurIntense: COULEUR_OP.intense,
         popupHtml: construirePopupHtml(r)
       }
     };
@@ -474,8 +390,6 @@ async function majMarqueurs(records) {
     geojson.features.forEach(f => bounds.extend(f.geometry.coordinates));
     map.fitBounds(bounds, { padding: 30, maxZoom: 16 });
   }
-
-  afficherPanneau(calculerStats(records));
 }
 
 // ============================================================
