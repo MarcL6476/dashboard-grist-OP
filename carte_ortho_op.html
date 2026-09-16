@@ -288,6 +288,11 @@ async function initCarte() {
       layout: { visibility: "none" }
     });
 
+    // Garantit explicitement l'ordre d'empilement : hachure au-dessus de la couleur,
+    // contour au-dessus de tout — indépendamment de l'ordre d'ajout.
+    map.moveLayer("foncier-hachure");
+    map.moveLayer("foncier-contour");
+
     map.on("click", "foncier-remplissage", e => {
       const p = e.features[0].properties;
       const commune = p.nom_com || "";
