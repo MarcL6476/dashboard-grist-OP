@@ -84,13 +84,22 @@ const COL_VISITE_DATE       = "Date_Visite";
 const STYLE_FOND_EPURE   = "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/epure.json";
 const STYLE_FOND_SECOURS = "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/gris.json";
 
-// --- Fichier GeoJSON du foncier repéré (à héberger à côté de ce HTML) ---
-// properties attendues par polygone : durete ("forte"|"faible"), enjeu ("fort"|"faible"),
-// nom, commune, surface (optionnels, pour le popup)
-const FICHIER_FONCIER = "foncier_repere.geojson";
+// --- Fichier GeoJSON du foncier repéré : DÉSORMAIS lu depuis la table Grist
+// "Foncier_repere" (colonnes durete, final, geometrie_json, etc.) plutôt qu'un
+// fichier externe — voir chargerFoncier().
+const TABLE_FONCIER = "Foncier_repere";
 
-const COULEUR_DURETE = { forte: "#E53935", faible: "#7CB342" }; // rouge / vert
+const COULEUR_DURETE = { "facilement mutable": "#7CB342", "difficilement mutable": "#E53935" }; // vert / rouge
 const COULEUR_DURETE_DEFAUT = "#888888";
+
+// L'enjeu n'est pas une colonne à part : il se déduit du texte de "final"
+// ("à enjeu facilement mutable" / "à moindre enjeu difficilement mutable" / ...).
+function deduireEnjeu(texteFinal) {
+  const t = String(texteFinal || "").toLowerCase();
+  if (t.includes("moindre enjeu")) return "moindre enjeu";
+  if (t.includes("enjeu")) return "fort enjeu";
+  return null;
+}
 // ============================================================
 
 let map;
@@ -161,6 +170,38 @@ function enregistrerImagesHachures() {
   if (!map.hasImage("hachure-faible")) map.addImage("hachure-faible", creerImageHachure(5, 1.2, 0.25));
 }
 
+// Convertit le résultat colonne-orienté de grist.docApi.fetchTable("Foncier_repere")
+// (ex: {id:[1,2,...], durete:[...], final:[...], geometrie_json:[...], ...}) en
+// FeatureCollection GeoJSON exploitable par MapLibre.
+function construireGeoJSONFoncier(donnees) {
+  const features = [];
+  const nbLignes = (donnees.id || []).length;
+  for (let i = 0; i < nbLignes; i++) {
+    const geometrieBrute = donnees.geometrie_json && donnees.geometrie_json[i];
+    if (!geometrieBrute) continue;
+    let geometry;
+    try {
+      geometry = JSON.parse(geometrieBrute);
+    } catch (e) {
+      console.warn("Géométrie foncier illisible pour la ligne", donnees.id[i], e);
+      continue;
+    }
+    const final = donnees.final ? donnees.final[i] : null;
+    features.push({
+      type: "Feature",
+      geometry,
+      properties: {
+        durete: donnees.durete ? donnees.durete[i] : null,
+        final,
+        enjeu: deduireEnjeu(final),
+        nom_com: donnees.nom_com ? donnees.nom_com[i] : null,
+        surf_m2: donnees.surf_m2 ? donnees.surf_m2[i] : null,
+      }
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 async function initCarte() {
   const styleFond = await resoudreStyleFond();
 
@@ -195,10 +236,11 @@ async function initCarte() {
     layout: { visibility: "none" }
   });
 
-  // --- Foncier repéré (GeoJSON, paresseux) : remplissage par dureté + hachures par enjeu ---
+  // --- Foncier repéré (table Grist "Foncier_repere", paresseux) : remplissage par
+  // dureté + hachures déduites du texte de "final" ---
   declarerCalqueParesseux("foncier", async () => {
-    const res = await fetch(FICHIER_FONCIER);
-    const geojson = await res.json();
+    const donnees = await grist.docApi.fetchTable(TABLE_FONCIER);
+    const geojson = construireGeoJSONFoncier(donnees);
 
     enregistrerImagesHachures();
     map.addSource("foncier", { type: "geojson", data: geojson });
@@ -208,9 +250,9 @@ async function initCarte() {
       type: "fill",
       source: "foncier",
       paint: {
-        "fill-color": ["match", ["downcase", ["to-string", ["get", "durete"]]],
-          "forte",  COULEUR_DURETE.forte,
-          "faible", COULEUR_DURETE.faible,
+        "fill-color": ["match", ["get", "durete"],
+          "facilement mutable",   COULEUR_DURETE["facilement mutable"],
+          "difficilement mutable",COULEUR_DURETE["difficilement mutable"],
           COULEUR_DURETE_DEFAUT
         ],
         "fill-opacity": 0.45
@@ -222,9 +264,9 @@ async function initCarte() {
       type: "fill",
       source: "foncier",
       paint: {
-        "fill-pattern": ["match", ["downcase", ["to-string", ["get", "enjeu"]]],
-          "fort",   "hachure-fort",
-          "faible", "hachure-faible",
+        "fill-pattern": ["match", ["get", "enjeu"],
+          "fort enjeu",    "hachure-fort",
+          "moindre enjeu", "hachure-faible",
           "hachure-faible"
         ],
         "fill-opacity": 0.9
@@ -236,9 +278,9 @@ async function initCarte() {
       type: "line",
       source: "foncier",
       paint: {
-        "line-color": ["match", ["downcase", ["to-string", ["get", "durete"]]],
-          "forte",  COULEUR_DURETE.forte,
-          "faible", COULEUR_DURETE.faible,
+        "line-color": ["match", ["get", "durete"],
+          "facilement mutable",   COULEUR_DURETE["facilement mutable"],
+          "difficilement mutable",COULEUR_DURETE["difficilement mutable"],
           COULEUR_DURETE_DEFAUT
         ],
         "line-width": 2
@@ -248,12 +290,10 @@ async function initCarte() {
 
     map.on("click", "foncier-remplissage", e => {
       const p = e.features[0].properties;
-      const nom = p.nom || "Secteur foncier";
-      const commune = p.commune || "";
-      const surface = p.surface ? `${p.surface} m²` : "";
+      const commune = p.nom_com || "";
       new maplibregl.Popup()
         .setLngLat(e.lngLat)
-        .setHTML(`<b>${nom}</b><br>${commune}<br>Dureté : ${p.durete || "—"} · Enjeu : ${p.enjeu || "—"}${surface ? "<br>Surface : "+surface : ""}`)
+        .setHTML(`<b>${p.final || "Secteur foncier"}</b><br>${commune}<br>Dureté : ${p.durete || "—"} · Enjeu : ${p.enjeu || "—"}${p.surf_m2 ? "<br>Surface : "+Math.round(p.surf_m2).toLocaleString("fr-FR")+" m²" : ""}`)
         .addTo(map);
     });
     map.on("mouseenter", "foncier-remplissage", () => { map.getCanvas().style.cursor = "pointer"; });
@@ -296,11 +336,11 @@ async function initCarte() {
         <label><input type="checkbox" id="toggle-cadastre"> Cadastre</label>
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
         <div class="groupe-titre">Dureté</div>
-        <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE.forte}"></span>Forte</div>
-        <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE.faible}"></span>Faible</div>
+        <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["facilement mutable"]}"></span>Facilement mutable</div>
+        <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["difficilement mutable"]}"></span>Difficilement mutable</div>
         <div class="groupe-titre">Enjeu (hachures)</div>
-        <div class="legende-item"><span class="legende-swatch" style="background:repeating-linear-gradient(45deg,rgba(0,0,0,0.55) 0 2px,transparent 2px 6px)"></span>Fort</div>
-        <div class="legende-item"><span class="legende-swatch" style="background:repeating-linear-gradient(45deg,rgba(0,0,0,0.25) 0 1.5px,transparent 1.5px 8px)"></span>Faible</div>
+        <div class="legende-item"><span class="legende-swatch" style="background:repeating-linear-gradient(45deg,rgba(0,0,0,0.55) 0 2px,transparent 2px 6px)"></span>Fort enjeu</div>
+        <div class="legende-item"><span class="legende-swatch" style="background:repeating-linear-gradient(45deg,rgba(0,0,0,0.25) 0 1.5px,transparent 1.5px 8px)"></span>Moindre enjeu</div>
       `;
       return this._div;
     }
