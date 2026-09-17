@@ -150,9 +150,20 @@ async function resoudreStyleFond() {
 // Génération des motifs de hachures : image SVG (data URI) chargée via Image()
 // puis enregistrée avec map.addImage — plus fiable que canvas.getImageData, qui
 // peut être mal interprété par MapLibre (pattern invisible ou trop pâle).
-// Deux motifs : enjeu fort (hachures serrées, foncées) / enjeu faible (hachures
-// espacées, claires). Utilisés en fill-pattern, superposés à la couleur de dureté.
+//
+// Conforme aux principes de sémiologie graphique (Bertin) : la variable est
+// ordinale (fort enjeu > moindre enjeu), donc les DEUX propriétés visuelles
+// (épaisseur du trait ET espacement) varient dans le même sens avec l'intensité
+// — fort enjeu = trait plus épais + hachures plus rapprochées (motif "lourd") ;
+// moindre enjeu = trait plus fin + hachures plus espacées (motif "léger").
+//
+// Les mêmes constantes et la même fonction de génération sont réutilisées pour
+// la légende (voir ControleCadastreFoncier) afin de garantir un rendu identique
+// entre légende et carte (évite tout décalage de sens ou d'aspect entre les deux).
 // ============================================================
+const HACHURE_FORT_ENJEU    = { tuile: 6,  epaisseur: 1.5 };
+const HACHURE_MOINDRE_ENJEU = { tuile: 14, epaisseur: 0.75 };
+
 function creerDataUriHachure(tailleTuile, epaisseur) {
   // Une seule ligne diagonale d'un coin à l'autre de la tuile : se répète en
   // hachure continue une fois tuilée par MapLibre, sans risque de clipping
@@ -173,15 +184,12 @@ function chargerImage(url) {
 }
 
 async function enregistrerImagesHachures() {
-  // Fort enjeu : tuile plus petite → lignes plus rapprochées (hachure dense)
-  // Moindre enjeu : tuile plus grande → lignes plus espacées (hachure clairsemée)
-  // Les deux en noir opaque, épaisseur fine (1px), sans transparence.
   if (!map.hasImage("hachure-fort")) {
-    const img = await chargerImage(creerDataUriHachure(6, 1));
+    const img = await chargerImage(creerDataUriHachure(HACHURE_FORT_ENJEU.tuile, HACHURE_FORT_ENJEU.epaisseur));
     map.addImage("hachure-fort", img);
   }
   if (!map.hasImage("hachure-faible")) {
-    const img = await chargerImage(creerDataUriHachure(12, 1));
+    const img = await chargerImage(creerDataUriHachure(HACHURE_MOINDRE_ENJEU.tuile, HACHURE_MOINDRE_ENJEU.epaisseur));
     map.addImage("hachure-faible", img);
   }
 }
@@ -229,7 +237,7 @@ async function initCarte() {
     attributionControl: false
   });
   map.addControl(new maplibregl.AttributionControl({
-    customAttribution: "Fond de plan © IGN — Cadastre © DGFiP"
+    customAttribution: "© IGN — Cadastre © DGFiP"
   }));
 
   await new Promise(resolve => map.on("load", resolve));
@@ -360,8 +368,8 @@ async function initCarte() {
         <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["facilement mutable"]}"></span>Facilement mutable</div>
         <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["difficilement mutable"]}"></span>Difficilement mutable</div>
         <div class="groupe-titre">Enjeu (hachures)</div>
-        <div class="legende-item"><span class="legende-swatch" style="background:repeating-linear-gradient(45deg,#000 0 1px,transparent 1px 6px)"></span>Fort enjeu</div>
-        <div class="legende-item"><span class="legende-swatch" style="background:repeating-linear-gradient(45deg,#000 0 1px,transparent 1px 12px)"></span>Moindre enjeu</div>
+        <div class="legende-item"><span class="legende-swatch" style="background-image:url('${creerDataUriHachure(HACHURE_FORT_ENJEU.tuile, HACHURE_FORT_ENJEU.epaisseur)}');background-repeat:repeat;background-size:${HACHURE_FORT_ENJEU.tuile}px ${HACHURE_FORT_ENJEU.tuile}px"></span>Fort enjeu</div>
+        <div class="legende-item"><span class="legende-swatch" style="background-image:url('${creerDataUriHachure(HACHURE_MOINDRE_ENJEU.tuile, HACHURE_MOINDRE_ENJEU.epaisseur)}');background-repeat:repeat;background-size:${HACHURE_MOINDRE_ENJEU.tuile}px ${HACHURE_MOINDRE_ENJEU.tuile}px"></span>Moindre enjeu</div>
       `;
       return this._div;
     }
