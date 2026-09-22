@@ -131,11 +131,11 @@ function normalizeLabel(s){
 // Ordre important : le 1er mot-clé qui matche l'emporte (du plus spécifique
 // au plus générique) — "feuille de route" doit être testé avant "débloqué".
 const STATUS_KEYWORDS=[
-  {kw:'recours',            color:'#E53935'}, // rouge
-  {kw:'feuille de route',   color:'#FB8C00'}, // orange
-  {kw:'debloque',           color:'#AED581'}, // vert clair
-  {kw:'normal',             color:'#7CB342'}, // vert foncé
-  {kw:'arret',             color:'#000000'}, // noir
+  {kw:'feuille de route',   color:'#FB8C00'}, // orange — Op bloquée feuille de route
+  {kw:'recours',            color:'#FFEB3B'}, // jaune — Recours en cours
+  {kw:'actuellement',       color:'#E53935'}, // rouge — Actuellement bloquée
+  {kw:'arret',              color:'#000000'}, // noir — Op non livrée à l'arrêt
+  {kw:'normal',             color:'#7CB342'}, // vert — Déroulement normal non livrée
 ];
   // Couleurs manuelles : priorité absolue sur les mots-clés ci-dessus.
 // Clé = identifiant de colonne Grist tel qu'il apparaît dans le mapping
@@ -143,7 +143,6 @@ const STATUS_KEYWORDS=[
 // Ajoute/modifie librement une ligne par catégorie que tu veux fixer.
 const COLOR_OVERRIDES={
   'logts_non_livres_bloques': '#E53935',
-  'logts_en_cours_recours': '#FB8C00',
   'logts_non_livres_a_l_arret': '#000000',
 };
 
