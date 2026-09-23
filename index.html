@@ -282,7 +282,7 @@ function renderBlocage(m,mappings){
   const recours=n(m.OpsRecours), tf=n(m.OpsFeuilleRouteTF), both=n(m.OpsBloqueesRecours);
   const items=[];
   if(recours>0) items.push(`${recours} bloquée${recours>1?'s':''} par recours`);
-  if(tf>0) items.push(`${tf} bloquée${tf>1?'s':''} avec feuille de route TF`);
+  if(tf>0) items.push(`${tf} bloquée${tf>1?'s':''} hors recours`);
   if(both>0) items.push(`(dont ${both} bloquée${both>1?'s':''} + recours)`);
   const detailHtml=items.length?'<div class="blocage-detail">'+items.map((txt,i)=>{
     const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
@@ -308,7 +308,7 @@ function renderBlocageLogs(m,mappings){
   const recours=n(m.LogsRecours), tf=n(m.LogsFeuilleRouteTF), both=n(m.LogsBloqueesRecours);
   const items=[];
   if(recours>0) items.push(`${recours} bloqué${recours>1?'s':''} par recours`);
-  if(tf>0) items.push(`${tf} bloqué${tf>1?'s':''} avec feuille de route TF`);
+  if(tf>0) items.push(`${tf} bloqué${tf>1?'s':''} hors recours`);
   if(both>0) items.push(`(dont ${both} bloqué${both>1?'s':''} + recours)`);
   const detailHtml=items.length?'<div class="blocage-detail">'+items.map((txt,i)=>{
     const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
