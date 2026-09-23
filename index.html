@@ -70,7 +70,10 @@
     </section>
     <section class="card">
       <h2 id="titreLogs">État des logements en cours</h2>
-      <div class="chart-box"><canvas id="chartBlocageLogs"></canvas></div>
+      <div class="chart-row">
+        <div class="chart-box"><canvas id="chartBlocageLogs"></canvas></div>
+        <div id="legendBlocageLogs" class="custom-legend"></div>
+      </div>
       <div class="note" id="noteBlocageLogs"></div>
     </section>
   </div>
@@ -103,6 +106,11 @@ grist.ready({
     col('OpsRecours',        'Dont opérations bloquées par recours',              'Numeric'),
     col('OpsFeuilleRouteTF', 'Dont opérations bloquées avec feuille de route TF', 'Numeric'),
     col('OpsBloqueesRecours','Dont opérations bloquées + recours',                'Numeric'),
+    col('LogsArret',          "Dont logements à l'arrêt",                         'Numeric'),
+    col('LogsDebloquees',     'Dont logements déjà débloqués',                    'Numeric'),
+    col('LogsRecours',        'Dont logements bloqués par recours',               'Numeric'),
+    col('LogsFeuilleRouteTF', 'Dont logements bloqués avec feuille de route TF',  'Numeric'),
+    col('LogsBloqueesRecours','Dont logements bloqués + recours',                 'Numeric'),
     col('Indicateurs',       'Logements : total + 4 colonnes "dont"',     'Numeric',{allowMultiple:true,optional:false}),
     col('StatutsBlocage',    'Statuts blocage – opérations (6 colonnes)',  'Numeric',{allowMultiple:true,optional:false}),
     col('StatutsBlocageLogs','Statuts blocage – logements (6 colonnes)',   'Numeric',{allowMultiple:true,optional:false}),
@@ -198,7 +206,10 @@ grist.onRecord((record,mappings)=>{
     +(opsArret>0?` <strong>ET ${opsArret} opération${opsArret>1?'s':''} à l'arrêt</strong>`:'')
     +(opsDeb>0?`<br>— <strong>dont</strong> ${opsDeb} opération${opsDeb>1?'s':''} déjà débloquée${opsDeb>1?'s':''}`:'');
 
-  $('titreLogs').innerHTML=`État des <strong>${nbLogsViv.toLocaleString('fr-FR')}</strong> logement${nbLogsViv>1?'s':''} en cours`;
+  const logsArret=n(m.LogsArret), logsDeb=n(m.LogsDebloquees);
+  $('titreLogs').innerHTML=`État des <strong>${nbLogsViv.toLocaleString('fr-FR')}</strong> logement${nbLogsViv>1?'s':''} en cours`
+    +(logsArret>0?` <strong>ET ${logsArret} logement${logsArret>1?'s':''} à l'arrêt</strong>`:'')
+    +(logsDeb>0?`<br>— <strong>dont</strong> ${logsDeb} logement${logsDeb>1?'s':''} déjà débloqué${logsDeb>1?'s':''}`:'');
 
   // Badges en haut
   $('headerBadges').innerHTML=[
@@ -281,11 +292,30 @@ function renderBlocage(m,mappings){
 }
 
 function renderBlocageLogs(m,mappings){
-  const note=$('noteBlocageLogs'), vals=toArr(m.StatutsBlocageLogs), ids=toArr(mappings&&mappings.StatutsBlocageLogs);
-  if(!vals.length){note.textContent='Mappez vos colonnes de blocage logements.';destroy('chartBlocageLogs');return;}
+  const note=$('noteBlocageLogs'), legendEl=$('legendBlocageLogs'), vals=toArr(m.StatutsBlocageLogs), ids=toArr(mappings&&mappings.StatutsBlocageLogs);
+  if(!vals.length){note.textContent='Mappez vos colonnes de blocage logements.';legendEl.innerHTML='';destroy('chartBlocageLogs');return;}
   note.textContent='';
+
   const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
-  makePie('chartBlocageLogs',vals,labels,resolveColors(labels));
+  const colors=resolveColors(labels);
+
+  const recours=n(m.LogsRecours), tf=n(m.LogsFeuilleRouteTF), both=n(m.LogsBloqueesRecours);
+  const items=[];
+  if(recours>0) items.push(`${recours} bloqué${recours>1?'s':''} par recours`);
+  if(tf>0) items.push(`${tf} bloqué${tf>1?'s':''} avec feuille de route TF`);
+  if(both>0) items.push(`(dont ${both} bloqué${both>1?'s':''} + recours)`);
+  const detailHtml=items.length?'<div class="blocage-detail">'+items.map((txt,i)=>{
+    const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
+    return `<div class="bd-line"><span class="bd-glyph">${glyph}</span>${txt}</div>`;
+  }).join('')+'</div>':'';
+
+  legendEl.innerHTML=labels.map((lbl,i)=>{
+    const isActuellement=normalizeLabel(lbl).includes('actuellement');
+    return `<div class="legend-item"><span class="legend-swatch" style="background:${colors[i]}"></span>${lbl}</div>`
+      +(isActuellement?detailHtml:'');
+  }).join('');
+
+  makePie('chartBlocageLogs',vals,labels,colors,{hideLegend:true});
 }
 
 function renderTableauAnnees(m){
