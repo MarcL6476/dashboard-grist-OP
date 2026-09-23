@@ -149,6 +149,13 @@ function normalizeLabel(s){
     .trim();
 }
 
+// Détecte l'item de légende "bloqué(e)" (ex. "Actuellement bloquée", "logts bloques")
+// sans confondre avec un libellé "débloqué(e)".
+function isBloqueLabel(lbl){
+  const norm=normalizeLabel(lbl);
+  return (norm.includes('actuellement')||norm.includes('bloque'))&&!norm.includes('debloque');
+}
+
 // Couleurs par mot-clé déclencheur : dès que le libellé (normalisé) CONTIENT
 // le mot-clé, la couleur associée s'applique. Plus besoin que le nom soit
 // identique au caractère près — robuste aux variations de formulation.
@@ -283,9 +290,8 @@ function renderBlocage(m,mappings){
   }).join('')+'</div>':'';
 
   legendEl.innerHTML=labels.map((lbl,i)=>{
-    const isActuellement=normalizeLabel(lbl).includes('actuellement');
     return `<div class="legend-item"><span class="legend-swatch" style="background:${colors[i]}"></span>${lbl}</div>`
-      +(isActuellement?detailHtml:'');
+      +(isBloqueLabel(lbl)?detailHtml:'');
   }).join('');
 
   makePie('chartBlocage',vals,labels,colors,{hideLegend:true});
@@ -310,9 +316,8 @@ function renderBlocageLogs(m,mappings){
   }).join('')+'</div>':'';
 
   legendEl.innerHTML=labels.map((lbl,i)=>{
-    const isActuellement=normalizeLabel(lbl).includes('actuellement');
     return `<div class="legend-item"><span class="legend-swatch" style="background:${colors[i]}"></span>${lbl}</div>`
-      +(isActuellement?detailHtml:'');
+      +(isBloqueLabel(lbl)?detailHtml:'');
   }).join('');
 
   makePie('chartBlocageLogs',vals,labels,colors,{hideLegend:true});
