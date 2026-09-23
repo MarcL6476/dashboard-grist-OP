@@ -31,6 +31,9 @@
   .tbl td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;width:33%;}
   #empty{text-align:center;padding:48px 12px;color:var(--soft);font-size:13px;}
   .hidden{display:none!important;}
+  .blocage-detail{margin-top:4px;}
+  .blocage-detail .bd-line{color:#C05A00;font-size:11px;font-weight:700;line-height:1.6;}
+  .blocage-detail .bd-glyph{display:inline-block;width:14px;font-family:monospace;color:#C05A00;}
 </style>
 </head>
 <body>
@@ -87,7 +90,11 @@ grist.ready({
     col('LLSTFLivres',      'Dont LLS TF livrés',                         'Numeric'),
     col('AccesTFLivres',    'Dont Acc. TF livrés',                        'Numeric'),
     col('FuturBlocage',      'Futur blocage détecté (nb logements)',        'Numeric'),
-    col('OpsDebloquees',     'Dont opérations déjà débloquées',            'Numeric'),
+    col('OpsDebloquees',     'Dont opérations déjà débloquées',                   'Numeric'),
+    col('OpsArret',          "Dont opérations à l'arrêt",                         'Numeric'),
+    col('OpsRecours',        'Dont opérations bloquées par recours',              'Numeric'),
+    col('OpsFeuilleRouteTF', 'Dont opérations bloquées avec feuille de route TF', 'Numeric'),
+    col('OpsBloqueesRecours','Dont opérations bloquées + recours',                'Numeric'),
     col('Indicateurs',       'Logements : total + 4 colonnes "dont"',     'Numeric',{allowMultiple:true,optional:false}),
     col('StatutsBlocage',    'Statuts blocage – opérations (6 colonnes)',  'Numeric',{allowMultiple:true,optional:false}),
     col('StatutsBlocageLogs','Statuts blocage – logements (6 colonnes)',   'Numeric',{allowMultiple:true,optional:false}),
@@ -176,9 +183,14 @@ grist.onRecord((record,mappings)=>{
   $('titre').textContent=m.Libelle||'Opération';
 
   // Titres dynamiques avec gras
-  const nbOps=n(m.NbOperations), nbLogsViv=n(m.NbLogsVivants), opsDeb=n(m.OpsDebloquees);
+  const nbOps=n(m.NbOperations), nbLogsViv=n(m.NbLogsVivants), opsDeb=n(m.OpsDebloquees), opsArret=n(m.OpsArret);
   $('titreIndicateurs').innerHTML=`Nombre de logements dans les <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`;
-  $('titreOps').innerHTML=`État des <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`+(opsDeb>0?` (dont ${opsDeb} opération${opsDeb>1?'s':''} déjà débloquée${opsDeb>1?'s':''})`:'');
+
+  const tiretsOps=[];
+  if(opsDeb>0) tiretsOps.push(`— <strong>dont</strong> ${opsDeb} opération${opsDeb>1?'s':''} déjà débloquée${opsDeb>1?'s':''}`);
+  if(opsArret>0) tiretsOps.push(`— <strong>dont ${opsArret} opération${opsArret>1?'s':''} à l'arrêt</strong>`);
+  $('titreOps').innerHTML=`État des <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`+(tiretsOps.length?`<br>${tiretsOps.join('<br>')}`:'');
+
   $('titreLogs').innerHTML=`État des <strong>${nbLogsViv.toLocaleString('fr-FR')}</strong> logement${nbLogsViv>1?'s':''} en cours`;
 
   // Badges en haut
@@ -233,9 +245,25 @@ function makePie(canvasId,vals,labels,colors){
 function renderBlocage(m,mappings){
   const note=$('noteBlocage'), vals=toArr(m.StatutsBlocage), ids=toArr(mappings&&mappings.StatutsBlocage);
   if(!vals.length){note.textContent='Mappez vos colonnes de blocage opérations.';destroy('chartBlocage');return;}
+
   const fb=n(m.FuturBlocage);
-  note.style.cssText=fb>0?'color:#C05A00;font-size:13px;font-weight:700;margin-top:5px;':'';
-  note.textContent=fb>0?`${fb} futur blocage${fb>1?'s':''} détecté${fb>1?'s':''}`:'';
+  const fbLine=fb>0?`<div style="color:#C05A00;font-size:13px;font-weight:700;">${fb} futur blocage${fb>1?'s':''} détecté${fb>1?'s':''}</div>`:'';
+
+  const recours=n(m.OpsRecours), tf=n(m.OpsFeuilleRouteTF), both=n(m.OpsBloqueesRecours);
+  const items=[];
+  if(recours>0) items.push(`${recours} bloquée${recours>1?'s':''} par recours`);
+  if(tf>0) items.push(`${tf} bloquée${tf>1?'s':''} avec feuille de route TF`);
+  if(both>0) items.push(`(dont ${both} bloquée${both>1?'s':''} + recours)`);
+
+  let detailHtml='';
+  if(items.length){
+    detailHtml='<div class="blocage-detail">'+items.map((txt,i)=>{
+      const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
+      return `<div class="bd-line"><span class="bd-glyph">${glyph}</span>${txt}</div>`;
+    }).join('')+'</div>';
+  }
+
+  note.innerHTML=fbLine+detailHtml;
   const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
   makePie('chartBlocage',vals,labels,resolveColors(labels));
 }
