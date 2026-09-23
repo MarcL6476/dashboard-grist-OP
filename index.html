@@ -31,9 +31,14 @@
   .tbl td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;width:33%;}
   #empty{text-align:center;padding:48px 12px;color:var(--soft);font-size:13px;}
   .hidden{display:none!important;}
-  .blocage-detail{margin-top:4px;}
+  .blocage-detail{margin:2px 0 6px 22px;}
   .blocage-detail .bd-line{color:#C05A00;font-size:11px;font-weight:700;line-height:1.6;}
   .blocage-detail .bd-glyph{display:inline-block;width:14px;font-family:monospace;color:#C05A00;}
+  .chart-row{display:flex;gap:8px;align-items:flex-start;}
+  .chart-row .chart-box{flex:1 1 55%;height:200px;}
+  .custom-legend{flex:1 1 45%;padding-top:6px;font-size:14px;}
+  .custom-legend .legend-item{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .custom-legend .legend-swatch{width:14px;height:14px;border-radius:3px;flex:none;}
 </style>
 </head>
 <body>
@@ -57,7 +62,10 @@
     </section>
     <section class="card">
       <h2 id="titreOps">État des opérations en cours</h2>
-      <div class="chart-box"><canvas id="chartBlocage"></canvas></div>
+      <div class="chart-row">
+        <div class="chart-box"><canvas id="chartBlocage"></canvas></div>
+        <div id="legendBlocage" class="custom-legend"></div>
+      </div>
       <div class="note" id="noteBlocage"></div>
     </section>
     <section class="card">
@@ -186,10 +194,9 @@ grist.onRecord((record,mappings)=>{
   const nbOps=n(m.NbOperations), nbLogsViv=n(m.NbLogsVivants), opsDeb=n(m.OpsDebloquees), opsArret=n(m.OpsArret);
   $('titreIndicateurs').innerHTML=`Nombre de logements dans les <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`;
 
-  const tiretsOps=[];
-  if(opsDeb>0) tiretsOps.push(`— <strong>dont</strong> ${opsDeb} opération${opsDeb>1?'s':''} déjà débloquée${opsDeb>1?'s':''}`);
-  if(opsArret>0) tiretsOps.push(`— <strong>dont ${opsArret} opération${opsArret>1?'s':''} à l'arrêt</strong>`);
-  $('titreOps').innerHTML=`État des <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`+(tiretsOps.length?`<br>${tiretsOps.join('<br>')}`:'');
+  $('titreOps').innerHTML=`État des <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`
+    +(opsArret>0?` <strong>ET ${opsArret} opération${opsArret>1?'s':''} à l'arrêt</strong>`:'')
+    +(opsDeb>0?`<br>— <strong>dont</strong> ${opsDeb} opération${opsDeb>1?'s':''} déjà débloquée${opsDeb>1?'s':''}`:'');
 
   $('titreLogs').innerHTML=`État des <strong>${nbLogsViv.toLocaleString('fr-FR')}</strong> logement${nbLogsViv>1?'s':''} en cours`;
 
@@ -233,39 +240,44 @@ function renderIndicateurs(m,mappings){
   });
 }
 
-function makePie(canvasId,vals,labels,colors){
+function makePie(canvasId,vals,labels,colors,opts={}){
   destroy(canvasId);
   const backgroundColor=colors||PPIE.slice(0,vals.length);
+  const options=pieOpts();
+  if(opts.hideLegend) options.plugins.legend.display=false;
   charts[canvasId]=new Chart($(canvasId),{type:'pie',
     data:{labels,datasets:[{data:vals,backgroundColor}]},
-    options:pieOpts(),
+    options,
   });
 }
 
 function renderBlocage(m,mappings){
-  const note=$('noteBlocage'), vals=toArr(m.StatutsBlocage), ids=toArr(mappings&&mappings.StatutsBlocage);
-  if(!vals.length){note.textContent='Mappez vos colonnes de blocage opérations.';destroy('chartBlocage');return;}
+  const note=$('noteBlocage'), legendEl=$('legendBlocage'), vals=toArr(m.StatutsBlocage), ids=toArr(mappings&&mappings.StatutsBlocage);
+  if(!vals.length){note.textContent='Mappez vos colonnes de blocage opérations.';legendEl.innerHTML='';destroy('chartBlocage');return;}
 
   const fb=n(m.FuturBlocage);
-  const fbLine=fb>0?`<div style="color:#C05A00;font-size:13px;font-weight:700;">${fb} futur blocage${fb>1?'s':''} détecté${fb>1?'s':''}</div>`:'';
+  note.innerHTML=fb>0?`<div style="color:#C05A00;font-size:13px;font-weight:700;">${fb} futur blocage${fb>1?'s':''} détecté${fb>1?'s':''}</div>`:'';
+
+  const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
+  const colors=resolveColors(labels);
 
   const recours=n(m.OpsRecours), tf=n(m.OpsFeuilleRouteTF), both=n(m.OpsBloqueesRecours);
   const items=[];
   if(recours>0) items.push(`${recours} bloquée${recours>1?'s':''} par recours`);
   if(tf>0) items.push(`${tf} bloquée${tf>1?'s':''} avec feuille de route TF`);
   if(both>0) items.push(`(dont ${both} bloquée${both>1?'s':''} + recours)`);
+  const detailHtml=items.length?'<div class="blocage-detail">'+items.map((txt,i)=>{
+    const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
+    return `<div class="bd-line"><span class="bd-glyph">${glyph}</span>${txt}</div>`;
+  }).join('')+'</div>':'';
 
-  let detailHtml='';
-  if(items.length){
-    detailHtml='<div class="blocage-detail">'+items.map((txt,i)=>{
-      const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
-      return `<div class="bd-line"><span class="bd-glyph">${glyph}</span>${txt}</div>`;
-    }).join('')+'</div>';
-  }
+  legendEl.innerHTML=labels.map((lbl,i)=>{
+    const isActuellement=normalizeLabel(lbl).includes('actuellement');
+    return `<div class="legend-item"><span class="legend-swatch" style="background:${colors[i]}"></span>${lbl}</div>`
+      +(isActuellement?detailHtml:'');
+  }).join('');
 
-  note.innerHTML=fbLine+detailHtml;
-  const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
-  makePie('chartBlocage',vals,labels,resolveColors(labels));
+  makePie('chartBlocage',vals,labels,colors,{hideLegend:true});
 }
 
 function renderBlocageLogs(m,mappings){
@@ -291,18 +303,4 @@ function renderTableauAnnees(m){
     return d;
   }
   const lan=build(m.AnneesLancement,m.LogementsLan,m.VenteLivreLan,m.InterLan,m.LLSLan,m.AccesLan);
-  const liv=build(m.AnneesLivraison,m.LogementsLiv,m.VenteLivreLiv,m.InterLiv,m.LLSLiv,m.AccesLiv);
-  const years=[...new Set([...Object.keys(lan),...Object.keys(liv)])].sort();
-  if(!years.length){el.innerHTML='';return;}
-  const cell=d=>{
-    if(!d) return '—';
-    const det=[d.vl?`${d.vl} VL`:'',d.inter?`${d.inter} Int.`:'',d.lls?`${d.lls} LLS`:'',d.acces?`${d.acces} Acc.`:''].filter(Boolean).join('; ');
-    return `${d.ops} op. / ${d.log} log.`+(det?`<br><small style="color:var(--soft)">(dont ${det})</small>`:'');
-  };
-  el.innerHTML=`<table class="tbl"><thead><tr><th>Année</th><th>Lancement travaux</th><th>Livraison</th></tr></thead><tbody>`
-    +years.map(y=>`<tr><td>${y}</td><td>${cell(lan[y])}</td><td>${cell(liv[y])}</td></tr>`).join('')
-    +`</tbody></table>`;
-}
-</script>
-</body>
-</html>
+  const liv=build(m.AnneesLivraison,m.LogementsLi
