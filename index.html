@@ -34,9 +34,9 @@
   .blocage-detail{margin:2px 0 6px 22px;}
   .blocage-detail .bd-line{color:#C05A00;font-size:11px;font-weight:700;line-height:1.6;}
   .blocage-detail .bd-glyph{display:inline-block;width:14px;font-family:monospace;color:#C05A00;}
-  .chart-row{display:flex;gap:8px;align-items:flex-start;}
-  .chart-row .chart-box{flex:1 1 55%;height:200px;}
-  .custom-legend{flex:1 1 45%;padding-top:6px;font-size:14px;}
+  .chart-row{display:flex;gap:0px;align-items:flex-start;}
+  .chart-row .chart-box{flex:1 1 50%;height:200px;}
+  .custom-legend{flex:1 1 50%;padding-top:6px;font-size:14px;margin-left:-38px;}
   .custom-legend .legend-item{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
   .custom-legend .legend-swatch{width:14px;height:14px;border-radius:3px;flex:none;}
 </style>
@@ -137,8 +137,6 @@ grist.ready({
 const PBAR='#4C6B7A';
 const PPIE=['#7CB342','#AED581','#FB8C00','#E53935','#FFEB3B','#64B5F6','#8C6A8F','#C99A3D'];
 
-// Normalise un libellé pour le rendre insensible aux accents, à la casse,
-// aux apostrophes/guillemets typographiques et à la ponctuation.
 function normalizeLabel(s){
   return String(s||'')
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
@@ -149,25 +147,18 @@ function normalizeLabel(s){
     .trim();
 }
 
-// Détecte l'item de légende "bloqué(e)" (ex. "Actuellement bloquée", "logts bloques")
-// sans confondre avec un libellé "débloqué(e)".
 function isBloqueLabel(lbl){
   const norm=normalizeLabel(lbl);
   return (norm.includes('actuellement')||norm.includes('bloque'))&&!norm.includes('debloque');
 }
 
-// Couleurs par mot-clé déclencheur : dès que le libellé (normalisé) CONTIENT
-// le mot-clé, la couleur associée s'applique. Plus besoin que le nom soit
-// identique au caractère près — robuste aux variations de formulation.
-// Ordre important : le 1er mot-clé qui matche l'emporte (du plus spécifique
-// au plus générique).
 const STATUS_KEYWORDS=[
-  {kw:'feuille',       color:'#FB8C00'}, // orange — Op bloquée feuille de route
-  {kw:'recours',       color:'#FFEB3B'}, // jaune — Recours en cours
-  {kw:'actuellement',  color:'#E53935'}, // rouge — Actuellement bloquée
-  {kw:'bloques',  color:'#E53935'}, // rouge 
-  {kw:'arret',         color:'#000000'}, // noir — Op non livrée à l'arrêt
-  {kw:'normal',        color:'#7CB342'}, // vert — Déroulement normal non livrée
+  {kw:'feuille',       color:'#FB8C00'},
+  {kw:'recours',       color:'#FFEB3B'},
+  {kw:'actuellement',  color:'#E53935'},
+  {kw:'bloques',  color:'#E53935'},
+  {kw:'arret',         color:'#000000'},
+  {kw:'normal',        color:'#7CB342'},
 ];
 
 function resolveColors(labels){
@@ -205,7 +196,6 @@ grist.onRecord((record,mappings)=>{
   toggle(true);
   $('titre').textContent=m.Libelle||'Opération';
 
-  // Titres dynamiques avec gras
   const nbOps=n(m.NbOperations), nbLogsViv=n(m.NbLogsVivants), opsDeb=n(m.OpsDebloquees), opsArret=n(m.OpsArret);
   $('titreIndicateurs').innerHTML=`Nombre de logements dans les <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`;
 
@@ -218,7 +208,6 @@ grist.onRecord((record,mappings)=>{
     +(logsArret>0?` <strong>ET ${logsArret} logement${logsArret>1?'s':''} à l'arrêt</strong>`:'')
     +(logsDeb>0?`<br>— <strong>dont</strong> ${logsDeb} logement${logsDeb>1?'s':''} déjà débloqué${logsDeb>1?'s':''}`:'');
 
-  // Badges en haut
   $('headerBadges').innerHTML=[
     {label:'Fond friche',val:m.FondFriche},
     {label:'TEL',val:m.TEL},
