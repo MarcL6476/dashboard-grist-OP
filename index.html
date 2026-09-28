@@ -7,6 +7,8 @@
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2/dist/chartjs-plugin-datalabels.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{ --paper:#F1ECDD;--card:#E8E0CB;--ink:#2B3430;--soft:#5B6259;--sage:#7C8F6B;--line:#D9CBA8; }
   *{box-sizing:border-box;}
@@ -19,6 +21,10 @@
   .header-badges{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;flex:1;}
   .section-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);font-weight:600;margin:4px 0 6px;}
   .bloc-2023{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 14px;margin-bottom:12px;font-size:14px;line-height:2;}
+  .bloc-row{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;margin-bottom:12px;}
+  .bloc-row .bloc-2023{flex:1 1 320px;margin-bottom:0;}
+  .carte-box{flex:1 1 320px;min-height:230px;position:relative;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:#eef1f4;}
+  #miniMap{position:absolute;top:0;left:0;right:0;bottom:0;}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 12px 8px;}
   .card h2{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--soft);font-weight:600;}
@@ -51,7 +57,10 @@
   </header>
 
   <div class="section-label">Opérations recensées depuis 2023</div>
-  <div class="bloc-2023" id="bloc2023"></div>
+  <div class="bloc-row" id="blocRow">
+    <div class="bloc-2023" id="bloc2023"></div>
+    <div class="carte-box" id="carteBox"><div id="miniMap"></div></div>
+  </div>
 
   <div class="section-label">Opérations vivantes</div>
   <div class="grid" id="grid">
@@ -97,6 +106,9 @@ grist.ready({
     col('LogsLivres',        'Dont logements déjà livrés',                 'Numeric'),
     col('OpsTFLivrees',      'Dont opérations TF livrées',                 'Numeric'),
     col('OpsAbandonnees',    'Dont opérations abandonnées',                'Numeric'),
+    col('CarteLats',         'Carte : latitudes des opérations (liste)',   'Any'),
+    col('CarteLngs',         'Carte : longitudes des opérations (liste)',  'Any'),
+    col('CarteEPCI',         'Carte : EPCI de la commune',                 'Any'),
     col('NbLogsVivants',    'Nb logements en cours (vivants)',            'Numeric'),
     col('LogsTFLivres',     'Dont logements TF livrés',                   'Numeric'),
     col('LLSTFLivres',      'Dont LLS TF livrés',                         'Numeric'),
@@ -182,7 +194,7 @@ const prettify=c=>{ try{return decodeURIComponent(String(c||'').replace(/_/g,' '
 const formatDate=v=>{const d=typeof v==='number'?new Date(v*1000):new Date(v);return(d&&!isNaN(d))?d.toLocaleDateString('fr-FR'):'—';};
 const formatEuro=v=>typeof v==='number'?v.toLocaleString('fr-FR')+' €':(v||'0 €');
 const isTruthy=v=>v===true||(typeof v==='number'&&v!==0)||(typeof v==='string'&&['oui','true','x','1','yes'].includes(v.trim().toLowerCase()));
-const toggle=show=>{['grid','header','bloc2023'].forEach(id=>$(id).classList.toggle('hidden',!show));$('empty').classList.toggle('hidden',show);};
+const toggle=show=>{['grid','header','bloc2023','blocRow'].forEach(id=>$(id).classList.toggle('hidden',!show));$('empty').classList.toggle('hidden',show);};
 const baseOpts=()=>({responsive:true,maintainAspectRatio:false,animation:{duration:250}});
 const pieOpts=()=>({...baseOpts(),plugins:{
   legend:{display:true,position:'right',labels:{boxWidth:14,font:{size:15},padding:10}},
@@ -190,6 +202,92 @@ const pieOpts=()=>({...baseOpts(),plugins:{
     borderRadius:4,padding:{top:2,bottom:2,left:4,right:4},
     display:ctx=>ctx.dataset.data[ctx.dataIndex]>0,formatter:v=>v},
 }});
+
+
+// ---- Mini-carte (marqueurs seulement) ----
+// Seuls les EPCI dont le nom (normalisé) CONTIENT un de ces mots-clés sont colorés par commune.
+const EPCI_COLORISES=['pays basque'];
+const COMMUNE_PALETTE=[
+  '#b5534a','#5f8f5a','#d1a23f','#4f6f9f','#8a5f9a','#4f9aa8',
+  '#c47a9a','#9aa84f','#3f7f76','#9a7048','#7a3f45','#6f7f8f'
+];
+function colorForIndex(idx){
+  if(idx<COMMUNE_PALETTE.length) return COMMUNE_PALETTE[idx];
+  return `hsl(${Math.round((idx*137.508)%360)}, 40%, 50%)`;
+}
+const communeColors={};
+let miniMap=null, miniLayer=null, communesCarte=[], selectedKey='', lastFitKey=null;
+
+grist.onRecords((records,mappings)=>{
+  communesCarte=(records||[]).map(r=>{
+    const c=grist.mapColumnNames(r,mappings);
+    if(!c) return null;
+    const lats=toArr(c.CarteLats), lngs=toArr(c.CarteLngs), pts=[];
+    lats.forEach((la,i)=>{
+      const lat=parseFloat(la), lng=parseFloat(lngs[i]);
+      if(isNaN(lat)||isNaN(lng)) return;
+      if(Math.abs(lat)<0.0001&&Math.abs(lng)<0.0001) return;
+      pts.push([lat,lng]);
+    });
+    return {key:normalizeLabel(c.Libelle), epci:normalizeLabel(c.CarteEPCI), pts};
+  }).filter(Boolean);
+  drawMiniMap();
+});
+
+function setSelectionCarte(libelle){
+  selectedKey=normalizeLabel(libelle);
+  drawMiniMap();
+}
+
+function drawMiniMap(){
+  const box=$('miniMap');
+  if(!box||box.offsetWidth===0||typeof L==='undefined') return; // bloc masqué : on redessine à l'affichage
+  if(!miniMap){
+    miniMap=L.map(box,{zoomControl:true,preferCanvas:true,maxZoom:19,attributionControl:false}).setView([46.6,2.4],6);
+    L.tileLayer(
+      'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile'+
+      '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM'+
+      '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg',
+      {maxZoom:19,maxNativeZoom:19,tileSize:256,updateWhenIdle:true,keepBuffer:1}
+    ).addTo(miniMap);
+    miniLayer=L.layerGroup().addTo(miniMap);
+  }
+  miniMap.invalidateSize();
+  miniLayer.clearLayers();
+
+  const isColore=c=>EPCI_COLORISES.some(kw=>c.epci.includes(kw));
+  const nouvelles=[...new Set(communesCarte.filter(c=>c.pts.length&&c.key&&isColore(c)&&!communeColors[c.key]).map(c=>c.key))].sort();
+  let idx=Object.keys(communeColors).length;
+  nouvelles.forEach(k=>{communeColors[k]=colorForIndex(idx++);});
+
+  const styleFor=(c,isSel)=>{
+    if(isColore(c)&&communeColors[c.key]){
+      return {radius:isSel?8:5,color:'#ffffff',weight:2,opacity:0.5,fillColor:communeColors[c.key],fillOpacity:isSel?0.9:0.35};
+    }
+    return {radius:isSel?8:5,color:isSel?'#c2540c':'#e07b1f',weight:isSel?3:1.5,opacity:0.9,fillColor:'#f5a742',fillOpacity:isSel?0.75:0.3};
+  };
+
+  const all=[], sel=[];
+  // communes non sélectionnées d'abord, sélectionnée au-dessus
+  [false,true].forEach(pass=>{
+    communesCarte.forEach(c=>{
+      const isSel=!!selectedKey&&c.key===selectedKey;
+      if(isSel!==pass) return;
+      c.pts.forEach(pt=>{
+        L.circleMarker(pt,{...styleFor(c,isSel),interactive:false}).addTo(miniLayer);
+        all.push(pt);
+        if(isSel) sel.push(pt);
+      });
+    });
+  });
+
+  const fitKey=selectedKey+'|'+all.length;
+  if(fitKey!==lastFitKey){
+    lastFitKey=fitKey;
+    const b=sel.length?sel:all;
+    if(b.length) miniMap.fitBounds(b,{padding:[20,20],maxZoom:13});
+  }
+}
 
 grist.onRecord((record,mappings)=>{
   const m=grist.mapColumnNames(record);
@@ -221,6 +319,7 @@ grist.onRecord((record,mappings)=>{
   renderBlocage(m,mappings);
   renderBlocageLogs(m,mappings);
   renderTableauAnnees(m);
+  setSelectionCarte(m.Libelle);
 });
 
 function renderBloc2023(m){
