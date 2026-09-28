@@ -82,7 +82,7 @@ const CANDIDATS_PROSPECTS = {
   commune: ["Commune", "nom_com", "Ville"],
   statut:  ["Statut", "Etat"]
 };
-const COULEUR_PROSPECTS = "#F57C00"; // orange
+const COULEUR_PROSPECTS = "#E53935"; // rouge
 const RAYON_PROSPECTS   = 4;         // plus petit que les OP (6, ou 9 si sélectionné)
 
 // --- Suivi de visite (compteur privé, visible uniquement par le propriétaire du document
@@ -105,7 +105,7 @@ const STYLE_FOND_SECOURS = "https://data.geopf.fr/annexes/ressources/vectorTiles
 // (colonnes durete, final, geometrie_json, etc.) — voir le calque paresseux "foncier".
 const TABLE_FONCIER = "Foncier_repere";
 
-const COULEUR_DURETE = { "facilement mutable": "#7CB342", "difficilement mutable": "#E53935" }; // vert / rouge
+const COULEUR_DURETE = { "facilement mutable": "#7CB342", "difficilement mutable": "#F57C00" }; // vert / orange
 const COULEUR_DURETE_DEFAUT = "#888888";
 
 // L'enjeu n'est pas une colonne à part : il se déduit du texte de "final"
@@ -333,7 +333,7 @@ async function initCarte() {
         "fill-opacity": 0.45
       },
       layout: { visibility: "none" }
-    });
+    }, "prospects-cercles"); // inséré sous les marqueurs
     map.addLayer({
       id: "foncier-hachure",
       type: "fill",
@@ -347,7 +347,7 @@ async function initCarte() {
         "fill-opacity": 1
       },
       layout: { visibility: "none" }
-    });
+    }, "prospects-cercles"); // inséré sous les marqueurs
     map.addLayer({
       id: "foncier-contour",
       type: "line",
@@ -361,11 +361,9 @@ async function initCarte() {
         "line-width": 1
       },
       layout: { visibility: "none" }
-    });
+    }, "prospects-cercles"); // inséré sous les marqueurs
 
-    // Ordre d'empilement : hachure au-dessus de la couleur, contour au-dessus de tout.
-    map.moveLayer("foncier-hachure");
-    map.moveLayer("foncier-contour");
+    // Ordre final (bas → haut) : foncier (couleur, hachures, contour) < prospects < OP.
 
     map.on("click", "foncier-remplissage", e => {
       const p = e.features[0].properties;
