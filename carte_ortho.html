@@ -51,6 +51,16 @@ const MAX_ZOOM = 19;
 const FIT_MAX_ZOOM = 13; // plafond du zoom automatique (fitBounds), réduit pour éviter un zoom trop fort sur sélection
 const SELECT_ZOOM = 17; // zoom appliqué quand on sélectionne une ligne dans le tableau
 
+// --- Couleurs par commune -----------------------------------------------
+// Seuls les EPCI dont le nom (normalisé) CONTIENT un de ces mots-clés sont colorés par commune.
+// Pour étendre à un autre EPCI, ajouter un mot-clé ici (ex. 'grand poitiers').
+const EPCI_COLORISES = ['pays basque'];
+const COMMUNE_PALETTE = [
+  '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#911eb4', '#00bfff',
+  '#f032e6', '#bcf60c', '#008080', '#9a6324', '#800000', '#ffffff'
+];
+const communeColors = {}; // commune normalisée -> couleur (conservée entre les rafraîchissements)
+
 const COLUMN_MAPPING = [
   { name: "Latitude", title: "Latitude", type: "Numeric", strictType: true },
   { name: "Longitude", title: "Longitude", type: "Numeric", strictType: true },
@@ -58,7 +68,9 @@ const COLUMN_MAPPING = [
   { name: "Popup2", title: "Popup - champ 2", optional: true, type: "Any" },
   { name: "Popup3", title: "Popup - champ 3", optional: true, type: "Any" },
   { name: "Popup4", title: "Popup - Logements total", optional: true, type: "Any" },
-  { name: "Popup5", title: "Popup - dont LS", optional: true, type: "Any" }
+  { name: "Popup5", title: "Popup - dont LS", optional: true, type: "Any" },
+  { name: "EPCI", title: "EPCI (couleur par commune)", optional: true, type: "Any" },
+  { name: "Commune", title: "Commune (couleur du marqueur)", optional: true, type: "Any" }
 ];
 
 const FIXED_LABELS = {
@@ -88,6 +100,42 @@ function escapeHtml(str) {
   }[c]));
 }
 
+// Insensible aux accents, à la casse et à la ponctuation.
+function normalizeLabel(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function isEpciColorise(rec) {
+  const epci = normalizeLabel(rec.EPCI);
+  if (!epci) return false;
+  return EPCI_COLORISES.some(kw => epci.includes(kw));
+}
+
+// Renvoie la clé de commune si le marqueur doit être coloré par commune, sinon null.
+function communeKey(rec) {
+  if (!isEpciColorise(rec)) return null;
+  const key = normalizeLabel(rec.Commune);
+  return key || null;
+}
+
+// Attribue une couleur aux nouvelles communes (ordre alphabétique), sans changer celles déjà attribuées.
+function assignCommuneColors(mappedRecords) {
+  const nouvelles = new Set();
+  mappedRecords.forEach(rec => {
+    const key = communeKey(rec);
+    if (key && !communeColors[key]) nouvelles.add(key);
+  });
+  let idx = Object.keys(communeColors).length;
+  [...nouvelles].sort().forEach(key => {
+    communeColors[key] = COMMUNE_PALETTE[idx % COMMUNE_PALETTE.length];
+    idx++;
+  });
+}
+
 function buildPopupHtml(rec, lat, lng) {
   const keys = ['Popup1', 'Popup2', 'Popup3', 'Popup4', 'Popup5'];
   let rows = '';
@@ -103,7 +151,13 @@ function buildPopupHtml(rec, lat, lng) {
   return `<div class="op-popup" data-lat="${lat}" data-lng="${lng}" title="Double-clic pour zoomer">${rows}</div>`;
 }
 
-function markerStyle(selected) {
+// color : couleur de la commune (EPCI coloré), sinon undefined -> style orange d'origine
+function markerStyle(selected, color) {
+  if (color) {
+    return selected
+      ? { radius: 12, color: '#000000', weight: 3, fillColor: color, fillOpacity: 0.85, opacity: 1 }
+      : { radius: 9, color: '#000000', weight: 1.5, fillColor: color, fillOpacity: 0.7, opacity: 0.9 };
+  }
   return selected
     ? { radius: 12, color: '#c2540c', weight: 3, fillColor: '#f5a742', fillOpacity: 0.65, opacity: 1 }
     : { radius: 9, color: '#e07b1f', weight: 2, fillColor: '#f5a742', fillOpacity: 0.45, opacity: 0.9 };
@@ -204,6 +258,7 @@ function redraw(records, mappings) {
   }
 
   const mapped = records.map(r => grist.mapColumnNames(r, mappings) || r);
+  assignCommuneColors(mapped);
   const bounds = [];
   let count = 0;
 
@@ -214,7 +269,10 @@ function redraw(records, mappings) {
     if (isNullIsland(lat, lng)) return;
 
     const rowId = records[idx].id;
-    const marker = L.circleMarker([lat, lng], markerStyle(rowId === selectedRowId));
+    const key = communeKey(rec);
+    const color = key ? communeColors[key] : undefined;
+    const marker = L.circleMarker([lat, lng], markerStyle(rowId === selectedRowId, color));
+    marker._communeColor = color;
     marker.bindPopup(buildPopupHtml(rec, lat, lng));
 
     marker.on('click', () => {
@@ -256,7 +314,7 @@ grist.onRecord((record, mappings) => {
 
   Object.entries(markersByRowId).forEach(([rowId, marker]) => {
     const isSelected = String(rowId) === String(selectedRowId);
-    marker.setStyle(markerStyle(isSelected));
+    marker.setStyle(markerStyle(isSelected, marker._communeColor));
     if (isSelected) marker.bringToFront();
   });
 
