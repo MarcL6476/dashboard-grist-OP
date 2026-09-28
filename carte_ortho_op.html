@@ -70,6 +70,21 @@ const COL_STATUT  = "Statut";               // statut de l'opération (optionnel
 const CENTRE_DEFAUT = [-1.10, 43.38]; // MapLibre attend [lon, lat]
 const ZOOM_DEFAUT   = 10;
 
+// --- Table secondaire de points : Prospects_PB_2026 (lue par son nom, en dur).
+// Les colonnes sont détectées automatiquement parmi ces candidats (insensible à la casse).
+// Si une colonne n'est pas trouvée, ajoute son nom exact en tête de la liste correspondante.
+const TABLE_PROSPECTS = "Prospects_PB_2026";
+const CANDIDATS_PROSPECTS = {
+  lat:     ["latitude", "lat", "y"],
+  lon:     ["longitude", "lon", "lng", "long", "x"],
+  titre:   ["Libelle", "Nom", "Intitule", "Titre", "Proprietaire", "Adresse_normalisee", "Adresse"],
+  adresse: ["Adresse_normalisee", "Adresse"],
+  commune: ["Commune", "nom_com", "Ville"],
+  statut:  ["Statut", "Etat"]
+};
+const COULEUR_PROSPECTS = "#F57C00"; // orange
+const RAYON_PROSPECTS   = 4;         // plus petit que les OP (6, ou 9 si sélectionné)
+
 // --- Suivi de visite (compteur privé, visible uniquement par le propriétaire du document
 // dans la table Visites — voir la fonction enregistrerVisite) ---
 const TABLE_PARTICIPANTS  = "Participants";
@@ -216,6 +231,53 @@ function construireGeoJSONFoncier(donnees) {
   return { type: "FeatureCollection", features };
 }
 
+// ============================================================
+// Prospects : lecture de la table Prospects_PB_2026 → points GeoJSON
+// ============================================================
+function trouverColonne(donnees, candidats) {
+  const cles = Object.keys(donnees);
+  for (const c of candidats) {
+    const k = cles.find(cle => cle.toLowerCase() === c.toLowerCase());
+    if (k) return k;
+  }
+  return null;
+}
+
+async function chargerProspects() {
+  const donnees = await grist.docApi.fetchTable(TABLE_PROSPECTS);
+  const cLat = trouverColonne(donnees, CANDIDATS_PROSPECTS.lat);
+  const cLon = trouverColonne(donnees, CANDIDATS_PROSPECTS.lon);
+  if (!cLat || !cLon) {
+    console.warn(`Prospects : colonnes latitude/longitude introuvables dans ${TABLE_PROSPECTS}. Colonnes disponibles :`, Object.keys(donnees));
+    return;
+  }
+  const cTitre   = trouverColonne(donnees, CANDIDATS_PROSPECTS.titre);
+  const cAdresse = trouverColonne(donnees, CANDIDATS_PROSPECTS.adresse);
+  const cCommune = trouverColonne(donnees, CANDIDATS_PROSPECTS.commune);
+  const cStatut  = trouverColonne(donnees, CANDIDATS_PROSPECTS.statut);
+
+  const features = [];
+  const nb = (donnees.id || []).length;
+  for (let i = 0; i < nb; i++) {
+    const lat = parseFloat(String(donnees[cLat][i]).replace(",", "."));
+    const lon = parseFloat(String(donnees[cLon][i]).replace(",", "."));
+    if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;
+    const titre   = (cTitre   && donnees[cTitre][i])   || "Prospect";
+    const adresse = (cAdresse && cAdresse !== cTitre && donnees[cAdresse][i]) || "";
+    const commune = (cCommune && donnees[cCommune][i]) || "";
+    const statut  = (cStatut  && donnees[cStatut][i])  || "";
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [lon, lat] },
+      properties: {
+        popupHtml: `<b>${titre}</b><br>${adresse}<br><span class="popup-commune">${commune}</span>${statut ? "<br>" + statut : ""}`
+      }
+    });
+  }
+  map.getSource("prospects").setData({ type: "FeatureCollection", features });
+  console.info(`Prospects : ${features.length} point(s) affiché(s) sur ${nb} ligne(s).`);
+}
+
 async function initCarte() {
   const styleFond = await resoudreStyleFond();
 
@@ -343,6 +405,32 @@ async function initCarte() {
   map.on("mouseenter", "op-cercles", () => { map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "op-cercles", () => { map.getCanvas().style.cursor = ""; });
 
+  // --- Prospects (table Prospects_PB_2026) : petits points orange ---
+  map.addSource("prospects", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({
+    id: "prospects-cercles",
+    type: "circle",
+    source: "prospects",
+    paint: {
+      "circle-radius": RAYON_PROSPECTS,
+      "circle-color": COULEUR_PROSPECTS,
+      "circle-opacity": 0.85,
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 1
+    }
+  });
+  map.moveLayer("op-cercles"); // les OP restent au-dessus des prospects
+
+  map.on("click", "prospects-cercles", e => {
+    const f = e.features[0];
+    if (popupOuvert) popupOuvert.remove();
+    popupOuvert = new maplibregl.Popup().setLngLat(f.geometry.coordinates).setHTML(f.properties.popupHtml).addTo(map);
+  });
+  map.on("mouseenter", "prospects-cercles", () => { map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "prospects-cercles", () => { map.getCanvas().style.cursor = ""; });
+
+  chargerProspects().catch(err => console.warn(`Prospects : lecture de ${TABLE_PROSPECTS} impossible (non bloquant) :`, err));
+
   // --- Contrôle cadastre / foncier (haut droit) ---
   class ControleCadastreFoncier {
     onAdd(mapInstance) {
@@ -352,6 +440,7 @@ async function initCarte() {
       this._div.innerHTML = `
         <label><input type="checkbox" id="toggle-cadastre"> Cadastre</label>
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
+        <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:${COULEUR_PROSPECTS};border-radius:50%;width:9px;height:9px"></span> Prospects 2026</label>
         <div class="groupe-titre">Dureté</div>
         <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["facilement mutable"]}"></span>Facilement mutable</div>
         <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["difficilement mutable"]}"></span>Difficilement mutable</div>
@@ -367,6 +456,10 @@ async function initCarte() {
 
   document.getElementById("toggle-cadastre").addEventListener("change", e => {
     map.setLayoutProperty("cadastre", "visibility", e.target.checked ? "visible" : "none");
+  });
+
+  document.getElementById("toggle-prospects").addEventListener("change", e => {
+    map.setLayoutProperty("prospects-cercles", "visibility", e.target.checked ? "visible" : "none");
   });
 
   document.getElementById("toggle-foncier").addEventListener("change", async e => {
