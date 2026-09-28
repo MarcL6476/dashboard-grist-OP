@@ -56,14 +56,14 @@ const SELECT_ZOOM = 17; // zoom appliqué quand on sélectionne une ligne dans l
 // Pour étendre à un autre EPCI, ajouter un mot-clé ici (ex. 'grand poitiers').
 const EPCI_COLORISES = ['pays basque'];
 const COMMUNE_PALETTE = [
-  '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#911eb4', '#00bfff',
-  '#f032e6', '#bcf60c', '#008080', '#9a6324', '#800000', '#2f4f4f'
+  '#b5534a', '#5f8f5a', '#d1a23f', '#4f6f9f', '#8a5f9a', '#4f9aa8',
+  '#c47a9a', '#9aa84f', '#3f7f76', '#9a7048', '#7a3f45', '#6f7f8f'
 ];
 // Au-delà de la palette : teinte générée (angle d'or) pour ne jamais réutiliser une couleur.
 function colorForIndex(idx) {
   if (idx < COMMUNE_PALETTE.length) return COMMUNE_PALETTE[idx];
   const hue = Math.round((idx * 137.508) % 360);
-  return `hsl(${hue}, 75%, 50%)`;
+  return `hsl(${hue}, 40%, 50%)`;
 }
 const communeColors = {}; // commune normalisée -> couleur (conservée entre les rafraîchissements)
 
