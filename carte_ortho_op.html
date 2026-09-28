@@ -56,7 +56,9 @@
 
 <script>
 // ============================================================
-// NOMS DES COLONNES — table OP (adapte si besoin)
+// NOMS DES COLONNES — noms LOGIQUES du widget.
+// Dans Grist (panneau de droite → Colonnes visibles), on associe chacun
+// de ces champs à la colonne réelle de la table FULL_CAPBP.
 // ============================================================
 const COL_LAT     = "latitude";
 const COL_LON     = "longitude";
@@ -69,7 +71,7 @@ const CENTRE_DEFAUT = [-1.10, 43.38]; // MapLibre attend [lon, lat]
 const ZOOM_DEFAUT   = 10;
 
 // --- Suivi de visite (compteur privé, visible uniquement par le propriétaire du document
-// dans la table Visites — voir plus bas la fonction enregistrerVisite) ---
+// dans la table Visites — voir la fonction enregistrerVisite) ---
 const TABLE_PARTICIPANTS  = "Participants";
 const TABLE_VISITES       = "Visites";
 const COL_PART_EMAIL      = "Email";
@@ -84,9 +86,8 @@ const COL_VISITE_DATE       = "Date_Visite";
 const STYLE_FOND_EPURE   = "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/epure.json";
 const STYLE_FOND_SECOURS = "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/gris.json";
 
-// --- Fichier GeoJSON du foncier repéré : DÉSORMAIS lu depuis la table Grist
-// "Foncier_repere" (colonnes durete, final, geometrie_json, etc.) plutôt qu'un
-// fichier externe — voir chargerFoncier().
+// --- Foncier repéré : lu depuis la table Grist "Foncier_repere"
+// (colonnes durete, final, geometrie_json, etc.) — voir le calque paresseux "foncier".
 const TABLE_FONCIER = "Foncier_repere";
 
 const COULEUR_DURETE = { "facilement mutable": "#7CB342", "difficilement mutable": "#E53935" }; // vert / rouge
@@ -108,13 +109,12 @@ let rowIdSelectionne = null;
 let derniersRecords = [];
 let cartePromise = null;
 
-// --- Couleur unique pour tous les marqueurs OP (plus de distinction par commune) ---
+// --- Couleur unique pour tous les marqueurs OP ---
 const COULEUR_OP = { normal: "#1a5fb4", intense: "#0d3b73" };
 
 // ============================================================
-// Calques "paresseux" : le fichier (GeoJSON, etc.) n'est téléchargé qu'au premier clic
-// sur la case correspondante, jamais au chargement de la carte — et jamais re-téléchargé
-// ensuite (mis en cache en mémoire pour la durée de la session).
+// Calques "paresseux" : téléchargés au premier clic sur la case correspondante,
+// jamais au chargement de la carte, puis gardés en mémoire pour la session.
 // ============================================================
 const calquesParesseux = {};
 
@@ -147,27 +147,18 @@ async function resoudreStyleFond() {
 }
 
 // ============================================================
-// Génération des motifs de hachures : image SVG (data URI) chargée via Image()
-// puis enregistrée avec map.addImage — plus fiable que canvas.getImageData, qui
-// peut être mal interprété par MapLibre (pattern invisible ou trop pâle).
+// Motifs de hachures : image SVG (data URI) chargée via Image()
+// puis enregistrée avec map.addImage.
 //
-// Conforme aux principes de sémiologie graphique (Bertin) : la variable est
-// ordinale (fort enjeu > moindre enjeu), donc les DEUX propriétés visuelles
-// (épaisseur du trait ET espacement) varient dans le même sens avec l'intensité
-// — fort enjeu = trait plus épais + hachures plus rapprochées (motif "lourd") ;
-// moindre enjeu = trait plus fin + hachures plus espacées (motif "léger").
-//
-// Les mêmes constantes et la même fonction de génération sont réutilisées pour
-// la légende (voir ControleCadastreFoncier) afin de garantir un rendu identique
-// entre légende et carte (évite tout décalage de sens ou d'aspect entre les deux).
+// Sémiologie graphique : la variable est ordinale (fort enjeu > moindre enjeu),
+// donc épaisseur du trait ET espacement varient dans le même sens :
+// fort enjeu = trait épais + hachures serrées ; moindre enjeu = trait fin + hachures espacées.
+// Les mêmes constantes servent pour la légende et pour la carte.
 // ============================================================
 const HACHURE_FORT_ENJEU    = { tuile: 6,  epaisseur: 1.5 };
 const HACHURE_MOINDRE_ENJEU = { tuile: 14, epaisseur: 0.75 };
 
 function creerDataUriHachure(tailleTuile, epaisseur) {
-  // Une seule ligne diagonale d'un coin à l'autre de la tuile : se répète en
-  // hachure continue une fois tuilée par MapLibre, sans risque de clipping
-  // (contrairement à une ligne décalée qui sortait du cadre du motif).
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tailleTuile}" height="${tailleTuile}">
     <line x1="0" y1="${tailleTuile}" x2="${tailleTuile}" y2="0" stroke="#000000" stroke-width="${epaisseur}" stroke-opacity="1"/>
   </svg>`;
@@ -195,8 +186,7 @@ async function enregistrerImagesHachures() {
 }
 
 // Convertit le résultat colonne-orienté de grist.docApi.fetchTable("Foncier_repere")
-// (ex: {id:[1,2,...], durete:[...], final:[...], geometrie_json:[...], ...}) en
-// FeatureCollection GeoJSON exploitable par MapLibre.
+// en FeatureCollection GeoJSON exploitable par MapLibre.
 function construireGeoJSONFoncier(donnees) {
   const features = [];
   const nbLignes = (donnees.id || []).length;
@@ -242,7 +232,7 @@ async function initCarte() {
 
   await new Promise(resolve => map.on("load", resolve));
 
-  // --- Cadastre DGFiP (raster WMTS) — ajouté caché, affiché seulement via la case ---
+  // --- Cadastre DGFiP (raster WMTS) — ajouté caché, affiché via la case ---
   map.addSource("cadastre", {
     type: "raster",
     tiles: [
@@ -260,8 +250,7 @@ async function initCarte() {
     layout: { visibility: "none" }
   });
 
-  // --- Foncier repéré (table Grist "Foncier_repere", paresseux) : remplissage par
-  // dureté + hachures déduites du texte de "final" ---
+  // --- Foncier repéré (table Grist "Foncier_repere", paresseux) ---
   declarerCalqueParesseux("foncier", async () => {
     const donnees = await grist.docApi.fetchTable(TABLE_FONCIER);
     const geojson = construireGeoJSONFoncier(donnees);
@@ -312,8 +301,7 @@ async function initCarte() {
       layout: { visibility: "none" }
     });
 
-    // Garantit explicitement l'ordre d'empilement : hachure au-dessus de la couleur,
-    // contour au-dessus de tout — indépendamment de l'ordre d'ajout.
+    // Ordre d'empilement : hachure au-dessus de la couleur, contour au-dessus de tout.
     map.moveLayer("foncier-hachure");
     map.moveLayer("foncier-contour");
 
@@ -388,7 +376,9 @@ async function initCarte() {
       checkbox.disabled = true;
       await activerCalqueParesseux("foncier");
       checkbox.disabled = false;
-      if (checkbox.checked) idsCalque.forEach(id => map.setLayoutProperty(id, "visibility", "visible"));
+      if (checkbox.checked && calquesParesseux.foncier.charge) {
+        idsCalque.forEach(id => map.setLayoutProperty(id, "visibility", "visible"));
+      }
     } else if (calquesParesseux.foncier.charge) {
       idsCalque.forEach(id => map.setLayoutProperty(id, "visibility", "none"));
     }
@@ -462,7 +452,7 @@ async function majMarqueurs(records) {
 }
 
 // ============================================================
-// Suivi de visite (compteur privé, table Visites) — mécanisme identique aux autres widgets
+// Suivi de visite (compteur privé, table Visites)
 // ============================================================
 async function enregistrerVisite() {
   try {
@@ -501,26 +491,39 @@ async function enregistrerVisite() {
 }
 
 // ============================================================
-// API Grist
+// API Grist — avec mappage de colonnes (panneau « Colonnes visibles »)
 // ============================================================
-grist.ready({ requiredAccess: "full", allowSelectBy: true });
+grist.ready({
+  requiredAccess: "full",
+  allowSelectBy: true,
+  columns: [
+    { name: COL_LAT,     title: "Latitude",  type: "Any" },
+    { name: COL_LON,     title: "Longitude", type: "Any" },
+    { name: COL_TITRE,   title: "Titre",     type: "Any", optional: true },
+    { name: COL_ADRESSE, title: "Adresse",   type: "Any", optional: true },
+    { name: COL_COMMUNE, title: "Commune",   type: "Any", optional: true },
+    { name: COL_STATUT,  title: "Statut",    type: "Any", optional: true }
+  ]
+});
 
 enregistrerVisite();
 
 grist.onRecords(records => {
-  assurerCarte().then(() => majMarqueurs(records));
+  const mapped = grist.mapColumnNames(records);
+  if (!mapped) return; // colonnes pas encore associées dans Grist
+  assurerCarte().then(() => majMarqueurs(mapped));
 });
 
 grist.onRecord(record => {
+  const mapped = grist.mapColumnNames(record);
+  if (!mapped) return;
   assurerCarte().then(() => {
-    if (!record) return;
-    appliquerSelectionVisuelle(record.id);
-    const feature = derniersRecords.find(r => r.id === record.id);
-    const lat = feature && parseFloat(feature[COL_LAT]);
-    const lon = feature && parseFloat(feature[COL_LON]);
+    appliquerSelectionVisuelle(mapped.id);
+    const lat = parseFloat(mapped[COL_LAT]);
+    const lon = parseFloat(mapped[COL_LON]);
     if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
       map.easeTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 15) });
-      ouvrirPopup(record.id, [lon, lat], construirePopupHtml(record));
+      ouvrirPopup(mapped.id, [lon, lat], construirePopupHtml(mapped));
     }
   });
 });
