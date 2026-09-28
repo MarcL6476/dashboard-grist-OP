@@ -57,8 +57,14 @@ const SELECT_ZOOM = 17; // zoom appliqué quand on sélectionne une ligne dans l
 const EPCI_COLORISES = ['pays basque'];
 const COMMUNE_PALETTE = [
   '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#911eb4', '#00bfff',
-  '#f032e6', '#bcf60c', '#008080', '#9a6324', '#800000', '#ffffff'
+  '#f032e6', '#bcf60c', '#008080', '#9a6324', '#800000', '#2f4f4f'
 ];
+// Au-delà de la palette : teinte générée (angle d'or) pour ne jamais réutiliser une couleur.
+function colorForIndex(idx) {
+  if (idx < COMMUNE_PALETTE.length) return COMMUNE_PALETTE[idx];
+  const hue = Math.round((idx * 137.508) % 360);
+  return `hsl(${hue}, 75%, 50%)`;
+}
 const communeColors = {}; // commune normalisée -> couleur (conservée entre les rafraîchissements)
 
 const COLUMN_MAPPING = [
@@ -131,7 +137,7 @@ function assignCommuneColors(mappedRecords) {
   });
   let idx = Object.keys(communeColors).length;
   [...nouvelles].sort().forEach(key => {
-    communeColors[key] = COMMUNE_PALETTE[idx % COMMUNE_PALETTE.length];
+    communeColors[key] = colorForIndex(idx);
     idx++;
   });
 }
@@ -155,8 +161,8 @@ function buildPopupHtml(rec, lat, lng) {
 function markerStyle(selected, color) {
   if (color) {
     return selected
-      ? { radius: 12, color: '#000000', weight: 3, fillColor: color, fillOpacity: 0.85, opacity: 1 }
-      : { radius: 9, color: '#000000', weight: 1.5, fillColor: color, fillOpacity: 0.7, opacity: 0.9 };
+      ? { radius: 12, color: '#ffffff', weight: 3, fillColor: color, fillOpacity: 0.85, opacity: 0.5 }
+      : { radius: 9, color: '#ffffff', weight: 2, fillColor: color, fillOpacity: 0.7, opacity: 0.5 };
   }
   return selected
     ? { radius: 12, color: '#c2540c', weight: 3, fillColor: '#f5a742', fillOpacity: 0.65, opacity: 1 }
