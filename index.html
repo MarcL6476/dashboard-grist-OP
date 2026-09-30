@@ -133,6 +133,7 @@ grist.ready({
     col('FinHDCEtat',        'Financement hors droit commun État (€)',     'Any'),
     col('AnneesLivraison',   'Années livraison (liste)',                   'Any'),
     col('AnneesLancement',   'Années lancement travaux (liste)',           'Any'),
+    col('AvancementListe',   'Avancement des opérations (liste)',          'Any'),
     col('LogementsLiv',      'Logements / livraison (liste)',              'Any'),
     col('LogementsLan',      'Logements / lancement (liste)',              'Any'),
     col('VenteLivreLiv',     'Vente libre / livraison (liste)',            'Any'),
@@ -416,10 +417,32 @@ function renderBlocageLogs(m,mappings){
 
 function renderTableauAnnees(m){
   const el=$('tableauAnnees');
+  // Exclusion des avancements 6/7/8 dans le tableau des années
+  // --------------------------------------------------------------
+  // AvancementListe contient TOUS les avancements, un par opération, dans le
+  // MÊME ORDRE que les autres listes du groupe (AnneesLancement, LogementsLan,
+  // LLSLan, etc.) : la valeur à l'index i correspond toujours à la même
+  // opération dans toutes ces listes.
+  //
+  // Pourquoi ne pas filtrer directement côté Grist (dans la formule de la
+  // colonne) ? Parce qu'une liste filtrée aurait moins d'éléments que les
+  // autres listes du groupe, donc l'index i ne pointerait plus vers la même
+  // opération d'une liste à l'autre — le tableau afficherait alors des
+  // chiffres faux, sans erreur visible pour le prévenir.
+  //
+  // On garde donc AvancementListe complète et non filtrée, et c'est ICI,
+  // dans le widget, qu'on décide pour chaque index i si l'opération doit
+  // être comptée ou exclue, avant de l'ajouter au total de l'année.
+  const avancements=toArr(m.AvancementListe);
+  const estExclu=i=>{
+    const av=String(avancements[i]==null?'':avancements[i]).trim();
+    return /^[678](\.|$)/.test(av); // avancement commençant par 6, 7 ou 8
+  };
   function build(years,logs,vl,inter,lls,acces){
     const d={};
     toArr(years).forEach((yr,i)=>{
       if(yr==null||yr==='') return;
+      if(estExclu(i)) return;
       const k=String(yr);
       if(!d[k]) d[k]={ops:0,log:0,vl:0,inter:0,lls:0,acces:0};
       d[k].ops++;
