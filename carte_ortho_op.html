@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Carte suivi OP — Cadastre / Foncier repéré</title>
+<title>Carte suivi OP — Foncier repéré</title>
 
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -65,7 +65,7 @@ const COL_LON     = "longitude";
 const COL_TITRE   = "Libelle";              // libellé opération
 const COL_ADRESSE = "Adresse_normalisee";
 const COL_COMMUNE = "Commune";
-const COL_STATUT  = "Statut";               // statut de l'opération (optionnel dans le popup)
+const COL_STATUT  = "Statut";               // statut de l'opération : PREVI ou AGREE (colonne STATUT)
 
 const CENTRE_DEFAUT = [-1.10, 43.38]; // MapLibre attend [lon, lat]
 const ZOOM_DEFAUT   = 10;
@@ -97,9 +97,22 @@ const COL_VISITE_NOM        = "Nom";
 const COL_VISITE_ORGANISME  = "Organisme";
 const COL_VISITE_DATE       = "Date_Visite";
 
-// --- Fond de carte vectoriel IGN Géoplateforme, gratuit et sans clé ---
-const STYLE_FOND_EPURE   = "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/epure.json";
-const STYLE_FOND_SECOURS = "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/gris.json";
+// --- Fond de carte : orthophotographie IGN Géoplateforme (WMTS), gratuite et sans clé ---
+const STYLE_FOND_ORTHO = {
+  version: 8,
+  sources: {
+    ortho: {
+      type: "raster",
+      tiles: [
+        "https://data.geopf.fr/wmts?layer=ORTHOIMAGERY.ORTHOPHOTOS&style=normal&tilematrixset=PM&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/jpeg&TileMatrix={z}&TileCol={x}&TileRow={y}"
+      ],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 19
+    }
+  },
+  layers: [{ id: "ortho", type: "raster", source: "ortho" }]
+};
 
 // --- Foncier repéré : lu depuis la table Grist "Foncier_repere"
 // (colonnes durete, final, geometrie_json, etc.) — voir le calque paresseux "foncier".
@@ -124,8 +137,17 @@ let rowIdSelectionne = null;
 let derniersRecords = [];
 let cartePromise = null;
 
-// --- Couleur unique pour tous les marqueurs OP ---
-const COULEUR_OP = { normal: "#1a5fb4", intense: "#0d3b73" };
+// --- Couleurs des marqueurs OP selon la colonne STATUT ---
+// AGREE : bleu foncé (couleur historique) ; PREVI : bleu plus clair.
+// Tout autre statut (ou statut vide) est affiché comme AGREE.
+const COULEURS_STATUT_OP = {
+  AGREE: { normal: "#1a5fb4", intense: "#0d3b73" },
+  PREVI: { normal: "#62a0ea", intense: "#3584e4" }
+};
+function couleursPourStatut(statut) {
+  const s = String(statut || "").trim().toUpperCase();
+  return COULEURS_STATUT_OP[s] || COULEURS_STATUT_OP.AGREE;
+}
 
 // ============================================================
 // Calques "paresseux" : téléchargés au premier clic sur la case correspondante,
@@ -150,15 +172,6 @@ async function activerCalqueParesseux(nom) {
     console.error(`Erreur chargement du calque paresseux '${nom}' :`, err);
     entree.enCours = null;
   }
-}
-
-async function resoudreStyleFond() {
-  try {
-    const r = await fetch(STYLE_FOND_EPURE, { method: "GET" });
-    if (r.ok) return STYLE_FOND_EPURE;
-  } catch (e) { /* réseau/CORS indisponible → bascule silencieuse */ }
-  console.warn("Widget carte : style IGN 'épuré' indisponible, bascule sur 'gris'.");
-  return STYLE_FOND_SECOURS;
 }
 
 // ============================================================
@@ -279,38 +292,18 @@ async function chargerProspects() {
 }
 
 async function initCarte() {
-  const styleFond = await resoudreStyleFond();
-
   map = new maplibregl.Map({
     container: "map",
-    style: styleFond,
+    style: STYLE_FOND_ORTHO,
     center: CENTRE_DEFAUT,
     zoom: ZOOM_DEFAUT,
     attributionControl: false
   });
   map.addControl(new maplibregl.AttributionControl({
-    customAttribution: "© IGN — Cadastre © DGFiP"
+    customAttribution: "© IGN — Orthophotographies"
   }));
 
   await new Promise(resolve => map.on("load", resolve));
-
-  // --- Cadastre DGFiP (raster WMTS) — ajouté caché, affiché via la case ---
-  map.addSource("cadastre", {
-    type: "raster",
-    tiles: [
-      "https://data.geopf.fr/wmts?layer=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&style=PCI%20vecteur&tilematrixset=PM_0_19&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/png&TileMatrix={z}&TileCol={x}&TileRow={y}"
-    ],
-    tileSize: 256,
-    minzoom: 0,
-    maxzoom: 22
-  });
-  map.addLayer({
-    id: "cadastre",
-    type: "raster",
-    source: "cadastre",
-    paint: { "raster-opacity": 0.75 },
-    layout: { visibility: "none" }
-  });
 
   // --- Foncier repéré (table Grist "Foncier_repere", paresseux) ---
   declarerCalqueParesseux("foncier", async () => {
@@ -403,7 +396,7 @@ async function initCarte() {
   map.on("mouseenter", "op-cercles", () => { map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "op-cercles", () => { map.getCanvas().style.cursor = ""; });
 
-  // --- Prospects (table Prospects_PB_2026) : petits points orange ---
+  // --- Prospects (table Prospects_PB_2026) : petits points rouges ---
   map.addSource("prospects", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({
     id: "prospects-cercles",
@@ -429,16 +422,22 @@ async function initCarte() {
 
   chargerProspects().catch(err => console.warn(`Prospects : lecture de ${TABLE_PROSPECTS} impossible (non bloquant) :`, err));
 
-  // --- Contrôle cadastre / foncier (haut droit) ---
-  class ControleCadastreFoncier {
+  // --- Contrôle foncier / prospects + légende (haut droit) ---
+  const swatchOP = statut => {
+    const c = COULEURS_STATUT_OP[statut];
+    return `<span class="legende-swatch" style="background:${c.normal};border-color:${c.intense};border-radius:50%"></span>`;
+  };
+  class ControleFoncier {
     onAdd(mapInstance) {
       this._map = mapInstance;
       this._div = document.createElement("div");
       this._div.className = "maplibregl-ctrl controle-cadastre";
       this._div.innerHTML = `
-        <label><input type="checkbox" id="toggle-cadastre"> Cadastre</label>
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
         <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:${COULEUR_PROSPECTS};border-radius:50%;width:9px;height:9px"></span> Prospects 2026</label>
+        <div class="groupe-titre">Opérations</div>
+        <div class="legende-item">${swatchOP("AGREE")}Agréée (AGREE)</div>
+        <div class="legende-item">${swatchOP("PREVI")}Prévisionnelle (PREVI)</div>
         <div class="groupe-titre">Dureté</div>
         <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["facilement mutable"]}"></span>Facilement mutable</div>
         <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["difficilement mutable"]}"></span>Difficilement mutable</div>
@@ -450,11 +449,7 @@ async function initCarte() {
     }
     onRemove() { this._div.remove(); this._map = undefined; }
   }
-  map.addControl(new ControleCadastreFoncier(), "top-right");
-
-  document.getElementById("toggle-cadastre").addEventListener("change", e => {
-    map.setLayoutProperty("cadastre", "visibility", e.target.checked ? "visible" : "none");
-  });
+  map.addControl(new ControleFoncier(), "top-right");
 
   document.getElementById("toggle-prospects").addEventListener("change", e => {
     map.setLayoutProperty("prospects-cercles", "visibility", e.target.checked ? "visible" : "none");
@@ -504,6 +499,7 @@ function construireGeoJSON(records) {
     if (!lat || !lon || isNaN(lat) || isNaN(lon)) return;
 
     const estSelectionne = (r.id === rowIdSelectionne);
+    const couleurs = couleursPourStatut(r[COL_STATUT]);
 
     const feature = {
       type: "Feature",
@@ -511,8 +507,8 @@ function construireGeoJSON(records) {
       properties: {
         rowId: r.id,
         selectionne: estSelectionne,
-        couleurNormal: COULEUR_OP.normal,
-        couleurIntense: COULEUR_OP.intense,
+        couleurNormal: couleurs.normal,
+        couleurIntense: couleurs.intense,
         popupHtml: construirePopupHtml(r)
       }
     };
@@ -593,7 +589,7 @@ grist.ready({
     { name: COL_TITRE,   title: "Titre",     type: "Any", optional: true },
     { name: COL_ADRESSE, title: "Adresse",   type: "Any", optional: true },
     { name: COL_COMMUNE, title: "Commune",   type: "Any", optional: true },
-    { name: COL_STATUT,  title: "Statut",    type: "Any", optional: true }
+    { name: COL_STATUT,  title: "Statut (PREVI / AGREE)", type: "Any", optional: true }
   ]
 });
 
