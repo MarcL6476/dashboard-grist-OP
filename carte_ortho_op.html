@@ -73,6 +73,7 @@
   }
   .legende-swatch { width: 13px; height: 13px; border: 1px solid rgba(0,0,0,0.3); flex: none; }
   .legende-pastille { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); flex: none; }
+  .controle-legende select { font-size: 12px; max-width: 210px; padding: 2px; }
 </style>
 </head>
 <body>
@@ -154,6 +155,10 @@ let rowIdSelectionne = null;
 let cartePromise = null;
 let cadrageInitialFait = false;
 let featuresOPParId = new Map();
+let communeFiltre = null;        // clé normalisée de la commune isolée (null = toutes)
+let derniersFeaturesOP = [];
+let featuresProspects = [];
+let signatureCommunes = "";
 
 // ============================================================
 // Utilitaires
@@ -173,6 +178,11 @@ function lireCoordonnee(v) {
 function normaliserTexte(v) {
   if (Array.isArray(v)) v = v.filter(x => x !== "L").join(" "); // liste de choix Grist
   return String(v == null ? "" : v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+// Clé de comparaison des communes : sans accents, casse, tirets ni apostrophes.
+function cleCommune(v) {
+  return normaliserTexte(v).replace(/[-'’]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 // Contenu d'un popup : chaque ligne n'est ajoutée que si elle est renseignée.
@@ -280,6 +290,7 @@ function construireGeoJSONFoncier(donnees) {
       properties: {
         final: donnees.final ? donnees.final[i] : null,
         nom_com: donnees.nom_com ? donnees.nom_com[i] : null,
+        communeCle: cleCommune(donnees.nom_com ? donnees.nom_com[i] : null),
         surf_m2: donnees.surf_m2 ? donnees.surf_m2[i] : null,
       }
     });
@@ -327,10 +338,11 @@ async function chargerProspects() {
     features.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
-      properties: { popupHtml: construireContenuPopup(titre, adresse, commune, statut) }
+      properties: { popupHtml: construireContenuPopup(titre, adresse, commune, statut), communeCle: cleCommune(commune) }
     });
   }
   map.getSource("prospects").setData({ type: "FeatureCollection", features });
+  featuresProspects = features;
   console.info(`Prospects : ${features.length} point(s) affiché(s) sur ${nb} ligne(s).`);
 }
 
@@ -358,6 +370,7 @@ function construireGeoJSONOP(records) {
         couleurIntense: c.intense,
         classePopup: c.classePopup,
         libelle: r[COL_TITRE] || "",
+        communeCle: cleCommune(r[COL_COMMUNE]),
         popupHtml: construireContenuPopupOP(r)
       }
     };
@@ -374,9 +387,58 @@ function appliquerSelectionVisuelle(rowId) {
   map.getSource("op-selection").setData({ type: "FeatureCollection", features: f ? [f] : [] });
 }
 
+// ---------- Filtre par commune (affichage uniquement) ----------
+const CALQUES_FILTRABLES = ["op-cercles", "op-selection", "op-noms", "prospects-cercles",
+                            "foncier-remplissage", "foncier-hachure", "foncier-contour"];
+
+function appliquerFiltreCommune() {
+  const filtre = communeFiltre ? ["==", ["get", "communeCle"], communeFiltre] : null;
+  CALQUES_FILTRABLES.forEach(id => { if (map.getLayer(id)) map.setFilter(id, filtre); });
+}
+
+// Liste des communes : celles présentes dans les opérations de FULL_CAPBP (Agglo de Pau).
+function remplirListeCommunes(records) {
+  const select = document.getElementById("select-commune");
+  if (!select) return;
+  const communes = new Map();
+  records.forEach(r => {
+    const cle = cleCommune(r[COL_COMMUNE]);
+    if (cle && !communes.has(cle)) communes.set(cle, String(r[COL_COMMUNE]).trim());
+  });
+  const tri = [...communes.entries()].sort((a, b) => a[1].localeCompare(b[1], "fr"));
+  const signature = tri.map(c => c[0]).join("|");
+  if (signature === signatureCommunes) return;
+  signatureCommunes = signature;
+  if (communeFiltre && !communes.has(communeFiltre)) {
+    communeFiltre = null;
+    appliquerFiltreCommune();
+  }
+  select.innerHTML = `<option value="">Toutes les communes</option>`
+    + tri.map(([cle, nom]) => `<option value="${echapperHtml(cle)}">${echapperHtml(nom)}</option>`).join("");
+  select.value = communeFiltre || "";
+}
+
+function cadrerSurCommune() {
+  const points = [];
+  derniersFeaturesOP.forEach(f => {
+    if (!communeFiltre || f.properties.communeCle === communeFiltre) points.push(f.geometry.coordinates);
+  });
+  if (communeFiltre) {
+    featuresProspects.forEach(f => {
+      if (f.properties.communeCle === communeFiltre) points.push(f.geometry.coordinates);
+    });
+  }
+  if (!points.length) return;
+  const bounds = new maplibregl.LngLatBounds();
+  points.forEach(c => bounds.extend(c));
+  map.fitBounds(bounds, { padding: 40, maxZoom: 15 });
+}
+
 function majMarqueurs(records) {
   const geojson = construireGeoJSONOP(records);
   map.getSource("op").setData(geojson);
+  derniersFeaturesOP = geojson.features;
+  remplirListeCommunes(records);
   if (rowIdSelectionne !== null) appliquerSelectionVisuelle(rowIdSelectionne);
 
   // Cadrage automatique uniquement au premier chargement
@@ -465,6 +527,7 @@ async function initCarte() {
       ouvrirPopup(e.lngLat, construireContenuPopup(p.final || "Secteur à enjeu", p.nom_com, surface, ""), "popup-foncier");
     });
     curseurMainSurCalque("foncier-remplissage");
+    appliquerFiltreCommune();
   });
 
   // --- Marqueurs OP : même rayon et même contour blanc pour tous les statuts ---
@@ -541,6 +604,8 @@ async function initCarte() {
       this._div = document.createElement("div");
       this._div.className = "maplibregl-ctrl controle-legende";
       this._div.innerHTML = `
+        <div class="groupe-titre" style="margin-top:0">Commune</div>
+        <select id="select-commune"><option value="">Toutes les communes</option></select>
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
         <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteurs à enjeux repérés</div>
         <div id="foncier-note" style="margin-left:20px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
@@ -562,6 +627,13 @@ async function initCarte() {
 
   document.getElementById("toggle-noms").addEventListener("change", e => {
     map.setLayoutProperty("op-noms", "visibility", e.target.checked ? "visible" : "none");
+  });
+
+  document.getElementById("select-commune").addEventListener("change", e => {
+    communeFiltre = e.target.value || null;
+    if (popupOuvert) { popupOuvert.remove(); popupOuvert = null; }
+    appliquerFiltreCommune();
+    cadrerSurCommune();
   });
 
   document.getElementById("toggle-foncier").addEventListener("change", async e => {
@@ -611,6 +683,8 @@ grist.onRecord(record => {
   const mapped = grist.mapColumnNames(record);
   if (!mapped) return;
   assurerCarte().then(() => {
+    // Commune isolée : une ligne d'une autre commune ne déclenche rien
+    if (communeFiltre && cleCommune(mapped[COL_COMMUNE]) !== communeFiltre) return;
     appliquerSelectionVisuelle(mapped.id);
     const lat = lireCoordonnee(mapped[COL_LAT]);
     const lon = lireCoordonnee(mapped[COL_LON]);
