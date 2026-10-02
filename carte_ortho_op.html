@@ -12,14 +12,34 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
   #map { height: 100%; width: 100%; }
-  .maplibregl-popup-content { font-size: 13px; line-height: 1.6; min-width: 180px; padding: 10px 12px; background: rgba(255, 255, 255, 0.88); }
-  .maplibregl-popup-content b { color: #1a5fb4; font-size: 14px; }
+
+  /* ---------- Popups : fond teinté selon le marqueur (variable --popup-bg) ---------- */
+  .maplibregl-popup-content { font-size: 13px; line-height: 1.6; min-width: 180px; padding: 10px 12px; background: var(--popup-bg, rgba(255, 255, 255, 0.88)); }
+  .maplibregl-popup-content b { color: var(--popup-titre, #1a5fb4); font-size: 14px; }
   .popup-commune { color: #666; font-size: 12px; }
+  .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: var(--popup-bg, rgba(255, 255, 255, 0.88)); }
+  .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: var(--popup-bg, rgba(255, 255, 255, 0.88)); }
+  .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--popup-bg, rgba(255, 255, 255, 0.88)); }
+  .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--popup-bg, rgba(255, 255, 255, 0.88)); }
+
+  .popup-agree    { --popup-bg: rgba(227, 237, 249, 0.92); --popup-titre: #1a5fb4; }
+  .popup-previ    { --popup-bg: rgba(255, 246, 204, 0.92); --popup-titre: #7a5c00; }
+  .popup-prospect { --popup-bg: rgba(253, 230, 229, 0.92); --popup-titre: #b71c1c; }
+  .popup-foncier  { --popup-bg: rgba(226, 246, 229, 0.92); --popup-titre: #1b7a2b; }
+
   /* Popup compact (prospects) : épouse la largeur du texte */
   .popup-compact .maplibregl-popup-content { min-width: 0; padding: 4px 8px; font-size: 11px; line-height: 1.3; }
   .popup-compact .maplibregl-popup-content b { font-size: 12px; }
-  .controle-cadastre {
-    background: white;
+
+  /* ---------- Légende (semi-transparente) ---------- */
+  .controle-legende {
+    background: rgba(255, 255, 255, 0.8);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
     padding: 6px 10px;
     border-radius: 4px;
     box-shadow: 0 1px 5px rgba(0,0,0,0.4);
@@ -29,7 +49,7 @@
     gap: 4px;
     margin: 10px;
   }
-  .controle-cadastre label {
+  .controle-legende label {
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -37,21 +57,22 @@
     margin: 0;
     white-space: nowrap;
   }
-  .controle-cadastre .groupe-titre {
+  .controle-legende .groupe-titre {
     font-weight: 600;
     font-size: 10px;
     text-transform: uppercase;
-    color: #666;
+    color: #555;
     margin-top: 4px;
   }
-  .controle-cadastre .legende-item {
+  .controle-legende .legende-item {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 11px;
-    color: #444;
+    color: #333;
   }
   .legende-swatch { width: 13px; height: 13px; border: 1px solid rgba(0,0,0,0.3); flex: none; }
+  .legende-pastille { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); flex: none; }
 </style>
 </head>
 <body>
@@ -88,18 +109,6 @@ const CANDIDATS_PROSPECTS = {
 const COULEUR_PROSPECTS = "#E53935"; // rouge
 const RAYON_PROSPECTS   = 4;         // plus petit que les OP (6, ou 9 si sélectionné)
 
-// --- Suivi de visite (compteur privé, visible uniquement par le propriétaire du document
-// dans la table Visites — voir la fonction enregistrerVisite) ---
-const TABLE_PARTICIPANTS  = "Participants";
-const TABLE_VISITES       = "Visites";
-const COL_PART_EMAIL      = "Email";
-const COL_PART_NOM        = "Nom";
-const COL_PART_ORGANISME  = "Organisme";
-const COL_VISITE_EMAIL      = "Email";
-const COL_VISITE_NOM        = "Nom";
-const COL_VISITE_ORGANISME  = "Organisme";
-const COL_VISITE_DATE       = "Date_Visite";
-
 // --- Fond de carte : orthophotographie IGN Géoplateforme (WMTS), gratuite et sans clé ---
 const STYLE_FOND_ORTHO = {
   version: 8,
@@ -119,35 +128,73 @@ const STYLE_FOND_ORTHO = {
   layers: [{ id: "ortho", type: "raster", source: "ortho" }]
 };
 
-// --- Foncier repéré : lu depuis la table Grist "Foncier_repere"
-// (colonnes durete, final, geometrie_json, etc.) — voir le calque paresseux "foncier".
-const TABLE_FONCIER = "Foncier_repere";
-
+// --- Foncier repéré : lu depuis la table Grist "Foncier_repere" (calque paresseux "foncier").
 // Seuls les secteurs dont la colonne "strategie" vaut "à enjeu" sont affichés.
+const TABLE_FONCIER = "Foncier_repere";
 const COL_FONCIER_STRATEGIE = "strategie";
 const VALEUR_FONCIER_AFFICHEE = "à enjeu";
-function normaliserTexte(v) {
-  if (Array.isArray(v)) v = v.filter(x => x !== "L").join(" "); // liste de choix Grist
-  return String(v == null ? "" : v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+const COULEUR_FONCIER = "#2ECC40"; // vert
+const HACHURE_ENJEUX  = { tuile: 8, epaisseur: 1.5 };
+
+// --- Couleurs des marqueurs OP selon la colonne STATUT ---
+// Tout autre statut (ou statut vide) est affiché comme AGREE.
+const COULEURS_STATUT_OP = {
+  AGREE: { normal: "#1a5fb4", intense: "#0d3b73", classePopup: "popup-agree" },
+  PREVI: { normal: "#FFD21F", intense: "#F5B800", classePopup: "popup-previ" }
+};
+function couleursPourStatut(statut) {
+  const s = String(statut || "").trim().toUpperCase();
+  return COULEURS_STATUT_OP[s] || COULEURS_STATUT_OP.AGREE;
 }
 // ============================================================
 
 let map;
 let popupOuvert = null;
 let rowIdSelectionne = null;
-let derniersRecords = [];
 let cartePromise = null;
+let cadrageInitialFait = false;
+let featuresOPParId = new Map();
 
-// --- Couleurs des marqueurs OP selon la colonne STATUT ---
-// AGREE : bleu (couleur historique, inchangée) ; PREVI : jaune avec contour plus foncé.
-// Tout autre statut (ou statut vide) est affiché comme AGREE.
-const COULEURS_STATUT_OP = {
-  AGREE: { normal: "#1a5fb4", intense: "#0d3b73", contourNormal: "#1a5fb4", contourIntense: "#0d3b73" },
-  PREVI: { normal: "#FFD21F", intense: "#F5B800", contourNormal: "#B38600", contourIntense: "#7A5C00" }
-};
-function couleursPourStatut(statut) {
-  const s = String(statut || "").trim().toUpperCase();
-  return COULEURS_STATUT_OP[s] || COULEURS_STATUT_OP.AGREE;
+// ============================================================
+// Utilitaires
+// ============================================================
+function echapperHtml(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// Accepte les nombres, les textes et les virgules décimales ("43,38"). Renvoie NaN si invalide ou nul.
+function lireCoordonnee(v) {
+  const n = parseFloat(String(v).replace(",", "."));
+  return (!n || isNaN(n)) ? NaN : n;
+}
+
+function normaliserTexte(v) {
+  if (Array.isArray(v)) v = v.filter(x => x !== "L").join(" "); // liste de choix Grist
+  return String(v == null ? "" : v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+// Contenu d'un popup : chaque ligne n'est ajoutée que si elle est renseignée.
+function construireContenuPopup(titre, adresse, commune, statut) {
+  return `<b>${echapperHtml(titre)}</b>`
+    + (adresse ? `<br>${echapperHtml(adresse)}` : "")
+    + (commune ? `<br><span class="popup-commune">${echapperHtml(commune)}</span>` : "")
+    + (statut  ? `<br>${echapperHtml(statut)}` : "");
+}
+
+// Un seul popup ouvert à la fois, quel que soit le type de calque.
+function ouvrirPopup(coordonnees, html, classe, options) {
+  if (popupOuvert) popupOuvert.remove();
+  popupOuvert = new maplibregl.Popup(Object.assign({ className: classe || "" }, options || {}))
+    .setLngLat(coordonnees)
+    .setHTML(html)
+    .addTo(map);
+}
+
+function curseurMainSurCalque(idCalque) {
+  map.on("mouseenter", idCalque, () => { map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", idCalque, () => { map.getCanvas().style.cursor = ""; });
 }
 
 // ============================================================
@@ -176,14 +223,10 @@ async function activerCalqueParesseux(nom) {
 }
 
 // ============================================================
-// Motifs de hachures : image SVG (data URI) chargée via Image()
-// puis enregistrée avec map.addImage.
-//
-// Les mêmes constantes servent pour la légende et pour la carte.
+// Motif de hachures : image SVG (data URI) chargée via Image()
+// puis enregistrée avec map.addImage. Les mêmes constantes servent
+// pour la légende et pour la carte.
 // ============================================================
-const HACHURE_ENJEUX  = { tuile: 8, epaisseur: 1.5 };
-const COULEUR_FONCIER = "#2ECC40"; // vert
-
 function creerDataUriHachure(tailleTuile, epaisseur, couleur) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tailleTuile}" height="${tailleTuile}">
     <line x1="0" y1="${tailleTuile}" x2="${tailleTuile}" y2="0" stroke="${couleur}" stroke-width="${epaisseur}" stroke-opacity="1"/>
@@ -208,7 +251,7 @@ async function enregistrerImagesHachures() {
 }
 
 // Convertit le résultat colonne-orienté de grist.docApi.fetchTable("Foncier_repere")
-// en FeatureCollection GeoJSON, en ne gardant que les secteurs "à enjeux".
+// en FeatureCollection GeoJSON, en ne gardant que les secteurs "à enjeu".
 function construireGeoJSONFoncier(donnees) {
   const features = [];
   const nbLignes = (donnees.id || []).length;
@@ -274,9 +317,9 @@ async function chargerProspects() {
   const features = [];
   const nb = (donnees.id || []).length;
   for (let i = 0; i < nb; i++) {
-    const lat = parseFloat(String(donnees[cLat][i]).replace(",", "."));
-    const lon = parseFloat(String(donnees[cLon][i]).replace(",", "."));
-    if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;
+    const lat = lireCoordonnee(donnees[cLat][i]);
+    const lon = lireCoordonnee(donnees[cLon][i]);
+    if (isNaN(lat) || isNaN(lon)) continue;
     const titre   = (cTitre   && donnees[cTitre][i])   || "Prospect";
     const adresse = (cAdresse && cAdresse !== cTitre && donnees[cAdresse][i]) || "";
     const commune = (cCommune && donnees[cCommune][i]) || "";
@@ -284,18 +327,70 @@ async function chargerProspects() {
     features.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
-      properties: {
-        popupHtml: `<b>${titre}</b>`
-          + (adresse ? `<br>${adresse}` : "")
-          + (commune ? `<br><span class="popup-commune">${commune}</span>` : "")
-          + (statut  ? `<br>${statut}` : "")
-      }
+      properties: { popupHtml: construireContenuPopup(titre, adresse, commune, statut) }
     });
   }
   map.getSource("prospects").setData({ type: "FeatureCollection", features });
   console.info(`Prospects : ${features.length} point(s) affiché(s) sur ${nb} ligne(s).`);
 }
 
+// ============================================================
+// Opérations (table FULL_CAPBP via le mappage de colonnes Grist)
+// ============================================================
+function construireContenuPopupOP(r) {
+  return construireContenuPopup(r[COL_TITRE] || "Opération", r[COL_ADRESSE], r[COL_COMMUNE], r[COL_STATUT]);
+}
+
+function construireGeoJSONOP(records) {
+  const features = [];
+  featuresOPParId = new Map();
+  records.forEach(r => {
+    const lat = lireCoordonnee(r[COL_LAT]);
+    const lon = lireCoordonnee(r[COL_LON]);
+    if (isNaN(lat) || isNaN(lon)) return;
+    const c = couleursPourStatut(r[COL_STATUT]);
+    const feature = {
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [lon, lat] },
+      properties: {
+        rowId: r.id,
+        couleurNormal: c.normal,
+        couleurIntense: c.intense,
+        classePopup: c.classePopup,
+        libelle: r[COL_TITRE] || "",
+        popupHtml: construireContenuPopupOP(r)
+      }
+    };
+    features.push(feature);
+    featuresOPParId.set(r.id, feature);
+  });
+  return { type: "FeatureCollection", features };
+}
+
+// La sélection ne met à jour qu'un seul point (couche dédiée), pas toute la source.
+function appliquerSelectionVisuelle(rowId) {
+  rowIdSelectionne = rowId;
+  const f = featuresOPParId.get(rowId);
+  map.getSource("op-selection").setData({ type: "FeatureCollection", features: f ? [f] : [] });
+}
+
+function majMarqueurs(records) {
+  const geojson = construireGeoJSONOP(records);
+  map.getSource("op").setData(geojson);
+  if (rowIdSelectionne !== null) appliquerSelectionVisuelle(rowIdSelectionne);
+
+  // Cadrage automatique uniquement au premier chargement
+  if (!cadrageInitialFait && geojson.features.length > 0 && rowIdSelectionne === null) {
+    const bounds = new maplibregl.LngLatBounds();
+    geojson.features.forEach(f => bounds.extend(f.geometry.coordinates));
+    map.fitBounds(bounds, { padding: 30, maxZoom: 16 });
+    cadrageInitialFait = true;
+  }
+}
+
+// ============================================================
+// Initialisation de la carte
+// ============================================================
 async function initCarte() {
   map = new maplibregl.Map({
     container: "map",
@@ -310,6 +405,26 @@ async function initCarte() {
 
   await new Promise(resolve => map.on("load", resolve));
 
+  // --- Prospects (table Prospects_PB_2026) : petits points rouges, sans contour ---
+  map.addSource("prospects", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({
+    id: "prospects-cercles",
+    type: "circle",
+    source: "prospects",
+    paint: {
+      "circle-radius": RAYON_PROSPECTS,
+      "circle-color": COULEUR_PROSPECTS,
+      "circle-opacity": 0.85,
+      "circle-stroke-width": 0
+    }
+  });
+  map.on("click", "prospects-cercles", e => {
+    const f = e.features[0];
+    ouvrirPopup(f.geometry.coordinates, f.properties.popupHtml, "popup-compact popup-prospect", { closeButton: false, maxWidth: "220px" });
+  });
+  curseurMainSurCalque("prospects-cercles");
+  chargerProspects().catch(err => console.warn(`Prospects : lecture de ${TABLE_PROSPECTS} impossible (non bloquant) :`, err));
+
   // --- Foncier repéré (table Grist "Foncier_repere", paresseux) ---
   declarerCalqueParesseux("foncier", async () => {
     const donnees = await grist.docApi.fetchTable(TABLE_FONCIER);
@@ -321,55 +436,66 @@ async function initCarte() {
     await enregistrerImagesHachures();
     map.addSource("foncier", { type: "geojson", data: geojson });
 
+    // Inséré sous les marqueurs : foncier (couleur, hachures, contour) < prospects < OP
     map.addLayer({
       id: "foncier-remplissage",
       type: "fill",
       source: "foncier",
       paint: { "fill-color": COULEUR_FONCIER, "fill-opacity": 0.15 },
       layout: { visibility: "none" }
-    }, "prospects-cercles"); // inséré sous les marqueurs
+    }, "prospects-cercles");
     map.addLayer({
       id: "foncier-hachure",
       type: "fill",
       source: "foncier",
       paint: { "fill-pattern": "hachure-enjeux", "fill-opacity": 1 },
       layout: { visibility: "none" }
-    }, "prospects-cercles"); // inséré sous les marqueurs
+    }, "prospects-cercles");
     map.addLayer({
       id: "foncier-contour",
       type: "line",
       source: "foncier",
       paint: { "line-color": COULEUR_FONCIER, "line-width": 1.5 },
       layout: { visibility: "none" }
-    }, "prospects-cercles"); // inséré sous les marqueurs
-
-    // Ordre final (bas → haut) : foncier (couleur, hachures, contour) < prospects < OP.
+    }, "prospects-cercles");
 
     map.on("click", "foncier-remplissage", e => {
       const p = e.features[0].properties;
-      const commune = p.nom_com || "";
-      new maplibregl.Popup()
-        .setLngLat(e.lngLat)
-        .setHTML(`<b>${p.final || "Secteur à enjeux"}</b><br>${commune}${p.surf_m2 ? "<br>Surface : "+Math.round(p.surf_m2).toLocaleString("fr-FR")+" m²" : ""}`)
-        .addTo(map);
+      const surface = p.surf_m2 ? "Surface : " + Math.round(p.surf_m2).toLocaleString("fr-FR") + " m²" : "";
+      ouvrirPopup(e.lngLat, construireContenuPopup(p.final || "Secteur à enjeu", p.nom_com, surface, ""), "popup-foncier");
     });
-    map.on("mouseenter", "foncier-remplissage", () => { map.getCanvas().style.cursor = "pointer"; });
-    map.on("mouseleave", "foncier-remplissage", () => { map.getCanvas().style.cursor = ""; });
+    curseurMainSurCalque("foncier-remplissage");
   });
 
-  // --- Marqueurs OP (source GeoJSON reconstruite à chaque mise à jour Grist) ---
+  // --- Marqueurs OP : même rayon et même contour blanc pour tous les statuts ---
   map.addSource("op", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({
     id: "op-cercles",
     type: "circle",
     source: "op",
     paint: {
-      "circle-radius":        ["case", ["get", "selectionne"], 9, 6],
-      "circle-color":         ["case", ["get", "selectionne"], ["get", "couleurIntense"], ["get", "couleurNormal"]],
-      "circle-opacity":       ["case", ["get", "selectionne"], 0.85, 0.55],
-      "circle-stroke-color":  ["case", ["get", "selectionne"], ["get", "contourIntense"], ["get", "contourNormal"]],
-      "circle-stroke-width":  ["case", ["get", "selectionne"], 2, 1.5],
-      "circle-stroke-opacity":["case", ["get", "selectionne"], 1, 0.75]
+      "circle-radius": 6,
+      "circle-color": ["get", "couleurNormal"],
+      "circle-opacity": 0.55,
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 1.5,
+      "circle-stroke-opacity": 1
+    }
+  });
+
+  // Couche dédiée au marqueur sélectionné (au-dessus, plus grand, plus intense)
+  map.addSource("op-selection", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({
+    id: "op-selection",
+    type: "circle",
+    source: "op-selection",
+    paint: {
+      "circle-radius": 9,
+      "circle-color": ["get", "couleurIntense"],
+      "circle-opacity": 0.85,
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 2.5,
+      "circle-stroke-opacity": 1
     }
   });
 
@@ -377,27 +503,10 @@ async function initCarte() {
     const f = e.features[0];
     const rowId = f.properties.rowId;
     appliquerSelectionVisuelle(rowId);
-    ouvrirPopup(rowId, f.geometry.coordinates, f.properties.popupHtml);
+    ouvrirPopup(f.geometry.coordinates, f.properties.popupHtml, f.properties.classePopup);
     grist.setCursorPos({ rowId });
   });
-  map.on("mouseenter", "op-cercles", () => { map.getCanvas().style.cursor = "pointer"; });
-  map.on("mouseleave", "op-cercles", () => { map.getCanvas().style.cursor = ""; });
-
-  // --- Prospects (table Prospects_PB_2026) : petits points rouges ---
-  map.addSource("prospects", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-  map.addLayer({
-    id: "prospects-cercles",
-    type: "circle",
-    source: "prospects",
-    paint: {
-      "circle-radius": RAYON_PROSPECTS,
-      "circle-color": COULEUR_PROSPECTS,
-      "circle-opacity": 0.85,
-      "circle-stroke-color": "#ffffff",
-      "circle-stroke-width": 1
-    }
-  });
-  map.moveLayer("op-cercles"); // les OP restent au-dessus des prospects
+  curseurMainSurCalque("op-cercles");
 
   // --- Noms des opérations (étiquettes discrètes, masquées par défaut) ---
   map.addLayer({
@@ -415,8 +524,7 @@ async function initCarte() {
       "text-max-width": 8,
       "text-padding": 3,
       "text-allow-overlap": false,
-      "text-optional": true,
-      "symbol-sort-key": ["case", ["get", "selectionne"], 0, 1]
+      "text-optional": true
     },
     paint: {
       "text-color": "#1b1b1b",
@@ -425,41 +533,28 @@ async function initCarte() {
     }
   });
 
-  map.on("click", "prospects-cercles", e => {
-    const f = e.features[0];
-    if (popupOuvert) popupOuvert.remove();
-    popupOuvert = new maplibregl.Popup({ className: "popup-compact", closeButton: false, maxWidth: "220px" }).setLngLat(f.geometry.coordinates).setHTML(f.properties.popupHtml).addTo(map);
-  });
-  map.on("mouseenter", "prospects-cercles", () => { map.getCanvas().style.cursor = "pointer"; });
-  map.on("mouseleave", "prospects-cercles", () => { map.getCanvas().style.cursor = ""; });
-
-  chargerProspects().catch(err => console.warn(`Prospects : lecture de ${TABLE_PROSPECTS} impossible (non bloquant) :`, err));
-
-  // --- Contrôle foncier / prospects + légende (haut droit) ---
-  const swatchOP = statut => {
-    const c = COULEURS_STATUT_OP[statut];
-    return `<span class="legende-swatch" style="background:${c.normal};border-color:${c.contourNormal};border-radius:50%"></span>`;
-  };
-  class ControleFoncier {
+  // --- Contrôle foncier / prospects / opérations + légende (haut droit) ---
+  const pastilleOP = statut => `<span class="legende-pastille" style="background:${COULEURS_STATUT_OP[statut].normal}"></span>`;
+  class ControleLegende {
     onAdd(mapInstance) {
       this._map = mapInstance;
       this._div = document.createElement("div");
-      this._div.className = "maplibregl-ctrl controle-cadastre";
+      this._div.className = "maplibregl-ctrl controle-legende";
       this._div.innerHTML = `
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
         <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteurs à enjeux repérés</div>
         <div id="foncier-note" style="margin-left:20px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
         <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:${COULEUR_PROSPECTS};border-radius:50%;width:9px;height:9px"></span> Prospects 2026</label>
         <div class="groupe-titre">Opérations</div>
-        <div class="legende-item">${swatchOP("AGREE")}Agréée</div>
-        <div class="legende-item">${swatchOP("PREVI")}Prévisionnelle 2026/28</div>
+        <div class="legende-item">${pastilleOP("AGREE")}Agréée</div>
+        <div class="legende-item">${pastilleOP("PREVI")}Prévisionnelle 2026/28</div>
         <label><input type="checkbox" id="toggle-noms"> Noms des opérations</label>
       `;
       return this._div;
     }
     onRemove() { this._div.remove(); this._map = undefined; }
   }
-  map.addControl(new ControleFoncier(), "top-right");
+  map.addControl(new ControleLegende(), "top-right");
 
   document.getElementById("toggle-prospects").addEventListener("change", e => {
     map.setLayoutProperty("prospects-cercles", "visibility", e.target.checked ? "visible" : "none");
@@ -490,113 +585,6 @@ function assurerCarte() {
   return cartePromise;
 }
 
-function construirePopupHtml(r) {
-  const titre   = r[COL_TITRE]   || "Opération";
-  const adresse = r[COL_ADRESSE] || "";
-  const commune = r[COL_COMMUNE] || "";
-  const statut  = r[COL_STATUT]  || "";
-  return `<b>${titre}</b>`
-    + (adresse ? `<br>${adresse}` : "")
-    + (commune ? `<br><span class="popup-commune">${commune}</span>` : "")
-    + (statut  ? `<br>${statut}` : "");
-}
-
-function ouvrirPopup(rowId, coordonnees, html) {
-  if (popupOuvert) popupOuvert.remove();
-  popupOuvert = new maplibregl.Popup().setLngLat(coordonnees).setHTML(html).addTo(map);
-}
-
-function construireGeoJSON(records) {
-  const features = [];
-  let featureSelectionnee = null;
-
-  records.forEach(r => {
-    const lat = parseFloat(r[COL_LAT]);
-    const lon = parseFloat(r[COL_LON]);
-    if (!lat || !lon || isNaN(lat) || isNaN(lon)) return;
-
-    const estSelectionne = (r.id === rowIdSelectionne);
-    const couleurs = couleursPourStatut(r[COL_STATUT]);
-
-    const feature = {
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [lon, lat] },
-      properties: {
-        rowId: r.id,
-        selectionne: estSelectionne,
-        couleurNormal: couleurs.normal,
-        couleurIntense: couleurs.intense,
-        contourNormal: couleurs.contourNormal,
-        contourIntense: couleurs.contourIntense,
-        libelle: r[COL_TITRE] || "",
-        popupHtml: construirePopupHtml(r)
-      }
-    };
-
-    if (estSelectionne) featureSelectionnee = feature;
-    else features.push(feature);
-  });
-
-  if (featureSelectionnee) features.push(featureSelectionnee);
-  return { type: "FeatureCollection", features };
-}
-
-function appliquerSelectionVisuelle(rowId) {
-  rowIdSelectionne = rowId;
-  map.getSource("op").setData(construireGeoJSON(derniersRecords));
-}
-
-async function majMarqueurs(records) {
-  derniersRecords = records;
-  const geojson = construireGeoJSON(records);
-  map.getSource("op").setData(geojson);
-
-  if (geojson.features.length > 0 && rowIdSelectionne === null) {
-    const bounds = new maplibregl.LngLatBounds();
-    geojson.features.forEach(f => bounds.extend(f.geometry.coordinates));
-    map.fitBounds(bounds, { padding: 30, maxZoom: 16 });
-  }
-}
-
-// ============================================================
-// Suivi de visite (compteur privé, table Visites)
-// ============================================================
-async function enregistrerVisite() {
-  try {
-    const participants = await grist.docApi.fetchTable(TABLE_PARTICIPANTS);
-    if (!participants.id || participants.id.length === 0) {
-      console.warn("Widget carte OP : aucune ligne Participants pour cet utilisateur — visite non enregistrée.");
-      return;
-    }
-    const email     = participants[COL_PART_EMAIL][0];
-    const nom       = participants[COL_PART_NOM][0];
-    const organisme = participants[COL_PART_ORGANISME][0];
-
-    const aujourdhui = new Date().toISOString().slice(0, 10);
-    const visites = await grist.docApi.fetchTable(TABLE_VISITES);
-    const dejaVisiteAujourdhui = (visites[COL_VISITE_EMAIL] || []).some((e, i) => {
-      if (e !== email) return false;
-      const timestamp = visites[COL_VISITE_DATE][i];
-      if (typeof timestamp !== "number") return false;
-      return new Date(timestamp * 1000).toISOString().slice(0, 10) === aujourdhui;
-    });
-    if (dejaVisiteAujourdhui) return;
-
-    const table = grist.getTable(TABLE_VISITES);
-    await table.create({
-      fields: {
-        [COL_VISITE_EMAIL]:     email,
-        [COL_VISITE_NOM]:       nom,
-        [COL_VISITE_ORGANISME]: organisme,
-        [COL_VISITE_DATE]:      Math.floor(Date.now() / 1000),
-      },
-    });
-    console.info("Widget carte OP : visite enregistrée pour", nom || email);
-  } catch (e) {
-    console.warn("Widget carte OP : enregistrement de la visite échoué (non bloquant) :", e);
-  }
-}
-
 // ============================================================
 // API Grist — avec mappage de colonnes (panneau « Colonnes visibles »)
 // ============================================================
@@ -613,8 +601,6 @@ grist.ready({
   ]
 });
 
-enregistrerVisite();
-
 grist.onRecords(records => {
   const mapped = grist.mapColumnNames(records);
   if (!mapped) return; // colonnes pas encore associées dans Grist
@@ -626,11 +612,11 @@ grist.onRecord(record => {
   if (!mapped) return;
   assurerCarte().then(() => {
     appliquerSelectionVisuelle(mapped.id);
-    const lat = parseFloat(mapped[COL_LAT]);
-    const lon = parseFloat(mapped[COL_LON]);
-    if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
+    const lat = lireCoordonnee(mapped[COL_LAT]);
+    const lon = lireCoordonnee(mapped[COL_LON]);
+    if (!isNaN(lat) && !isNaN(lon)) {
       map.easeTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 15) });
-      ouvrirPopup(mapped.id, [lon, lat], construirePopupHtml(mapped));
+      ouvrirPopup([lon, lat], construireContenuPopupOP(mapped), couleursPourStatut(mapped[COL_STATUT]).classePopup);
     }
   });
 });
