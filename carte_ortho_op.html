@@ -127,7 +127,8 @@ const TABLE_FONCIER = "Foncier_repere";
 const COL_FONCIER_STRATEGIE = "strategie";
 const VALEUR_FONCIER_AFFICHEE = "à enjeux";
 function normaliserTexte(v) {
-  return String(v || "").normalize("NFC").trim().toLowerCase();
+  if (Array.isArray(v)) v = v.filter(x => x !== "L").join(" "); // liste de choix Grist
+  return String(v == null ? "" : v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 }
 // ============================================================
 
@@ -211,12 +212,16 @@ async function enregistrerImagesHachures() {
 function construireGeoJSONFoncier(donnees) {
   const features = [];
   const nbLignes = (donnees.id || []).length;
-  if (!donnees[COL_FONCIER_STRATEGIE]) {
+  const cle = Object.keys(donnees).find(k => normaliserTexte(k) === normaliserTexte(COL_FONCIER_STRATEGIE));
+  if (!cle) {
     console.warn(`Foncier : colonne '${COL_FONCIER_STRATEGIE}' introuvable. Colonnes disponibles :`, Object.keys(donnees));
-    return { type: "FeatureCollection", features };
+    return { type: "FeatureCollection", features, diagnostic: `colonne '${COL_FONCIER_STRATEGIE}' introuvable` };
   }
+  const cible = normaliserTexte(VALEUR_FONCIER_AFFICHEE);
+  const valeursVues = new Set();
   for (let i = 0; i < nbLignes; i++) {
-    if (normaliserTexte(donnees[COL_FONCIER_STRATEGIE][i]) !== normaliserTexte(VALEUR_FONCIER_AFFICHEE)) continue;
+    valeursVues.add(JSON.stringify(donnees[cle][i]));
+    if (normaliserTexte(donnees[cle][i]) !== cible) continue;
     const geometrieBrute = donnees.geometrie_json && donnees.geometrie_json[i];
     if (!geometrieBrute) continue;
     let geometry;
@@ -236,7 +241,9 @@ function construireGeoJSONFoncier(donnees) {
       }
     });
   }
-  return { type: "FeatureCollection", features };
+  console.info(`Foncier : ${features.length} secteur(s) '${VALEUR_FONCIER_AFFICHEE}' sur ${nbLignes} ligne(s). Valeurs de '${cle}' :`, [...valeursVues]);
+  const diagnostic = features.length ? "" : `aucune ligne '${VALEUR_FONCIER_AFFICHEE}' dans '${cle}' (${[...valeursVues].slice(0, 4).join(", ")})`;
+  return { type: "FeatureCollection", features, diagnostic };
 }
 
 // ============================================================
@@ -278,7 +285,10 @@ async function chargerProspects() {
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
       properties: {
-        popupHtml: `<b>${titre}</b><br>${adresse}<br><span class="popup-commune">${commune}</span>${statut ? "<br>" + statut : ""}`
+        popupHtml: `<b>${titre}</b>`
+          + (adresse ? `<br>${adresse}` : "")
+          + (commune ? `<br><span class="popup-commune">${commune}</span>` : "")
+          + (statut  ? `<br>${statut}` : "")
       }
     });
   }
@@ -304,6 +314,9 @@ async function initCarte() {
   declarerCalqueParesseux("foncier", async () => {
     const donnees = await grist.docApi.fetchTable(TABLE_FONCIER);
     const geojson = construireGeoJSONFoncier(donnees);
+
+    const note = document.getElementById("foncier-note");
+    if (note) note.textContent = geojson.diagnostic ? "⚠ " + geojson.diagnostic : "";
 
     await enregistrerImagesHachures();
     map.addSource("foncier", { type: "geojson", data: geojson });
@@ -434,7 +447,8 @@ async function initCarte() {
       this._div.className = "maplibregl-ctrl controle-cadastre";
       this._div.innerHTML = `
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
-        <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteur à enjeux</div>
+        <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteurs à enjeux repérés</div>
+        <div id="foncier-note" style="margin-left:20px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
         <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:${COULEUR_PROSPECTS};border-radius:50%;width:9px;height:9px"></span> Prospects 2026</label>
         <div class="groupe-titre">Opérations</div>
         <div class="legende-item">${swatchOP("AGREE")}Agréée</div>
@@ -481,7 +495,10 @@ function construirePopupHtml(r) {
   const adresse = r[COL_ADRESSE] || "";
   const commune = r[COL_COMMUNE] || "";
   const statut  = r[COL_STATUT]  || "";
-  return `<b>${titre}</b><br>${adresse}<br><span class="popup-commune">${commune}</span>${statut ? "<br>"+statut : ""}`;
+  return `<b>${titre}</b>`
+    + (adresse ? `<br>${adresse}` : "")
+    + (commune ? `<br><span class="popup-commune">${commune}</span>` : "")
+    + (statut  ? `<br>${statut}` : "");
 }
 
 function ouvrirPopup(rowId, coordonnees, html) {
