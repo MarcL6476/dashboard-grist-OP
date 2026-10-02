@@ -125,7 +125,7 @@ const TABLE_FONCIER = "Foncier_repere";
 
 // Seuls les secteurs dont la colonne "strategie" vaut "à enjeux" sont affichés.
 const COL_FONCIER_STRATEGIE = "strategie";
-const VALEUR_FONCIER_AFFICHEE = "à enjeux";
+const VALEUR_FONCIER_AFFICHEE = "à enjeu";
 function normaliserTexte(v) {
   if (Array.isArray(v)) v = v.filter(x => x !== "L").join(" "); // liste de choix Grist
   return String(v == null ? "" : v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
