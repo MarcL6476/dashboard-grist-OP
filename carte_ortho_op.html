@@ -15,6 +15,9 @@
   .maplibregl-popup-content { font-size: 13px; line-height: 1.6; min-width: 180px; padding: 10px 12px; background: rgba(255, 255, 255, 0.88); }
   .maplibregl-popup-content b { color: #1a5fb4; font-size: 14px; }
   .popup-commune { color: #666; font-size: 12px; }
+  /* Popup compact (prospects) : épouse la largeur du texte */
+  .popup-compact .maplibregl-popup-content { min-width: 0; padding: 4px 8px; font-size: 11px; line-height: 1.3; }
+  .popup-compact .maplibregl-popup-content b { font-size: 12px; }
   .controle-cadastre {
     background: white;
     padding: 6px 10px;
@@ -100,6 +103,8 @@ const COL_VISITE_DATE       = "Date_Visite";
 // --- Fond de carte : orthophotographie IGN Géoplateforme (WMTS), gratuite et sans clé ---
 const STYLE_FOND_ORTHO = {
   version: 8,
+  // Polices nécessaires uniquement pour la couche « Noms des opérations »
+  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
   sources: {
     ortho: {
       type: "raster",
@@ -118,16 +123,11 @@ const STYLE_FOND_ORTHO = {
 // (colonnes durete, final, geometrie_json, etc.) — voir le calque paresseux "foncier".
 const TABLE_FONCIER = "Foncier_repere";
 
-const COULEUR_DURETE = { "facilement mutable": "#7CB342", "difficilement mutable": "#F57C00" }; // vert / orange
-const COULEUR_DURETE_DEFAUT = "#888888";
-
-// L'enjeu n'est pas une colonne à part : il se déduit du texte de "final"
-// ("à enjeu facilement mutable" / "à moindre enjeu difficilement mutable" / ...).
-function deduireEnjeu(texteFinal) {
-  const t = String(texteFinal || "").toLowerCase();
-  if (t.includes("moindre enjeu")) return "moindre enjeu";
-  if (t.includes("enjeu")) return "fort enjeu";
-  return null;
+// Seuls les secteurs dont la colonne "strategie" vaut "à enjeux" sont affichés.
+const COL_FONCIER_STRATEGIE = "strategie";
+const VALEUR_FONCIER_AFFICHEE = "à enjeux";
+function normaliserTexte(v) {
+  return String(v || "").normalize("NFC").trim().toLowerCase();
 }
 // ============================================================
 
@@ -138,11 +138,11 @@ let derniersRecords = [];
 let cartePromise = null;
 
 // --- Couleurs des marqueurs OP selon la colonne STATUT ---
-// AGREE : bleu foncé (couleur historique) ; PREVI : bleu plus clair.
+// AGREE : bleu (couleur historique, inchangée) ; PREVI : jaune avec contour plus foncé.
 // Tout autre statut (ou statut vide) est affiché comme AGREE.
 const COULEURS_STATUT_OP = {
-  AGREE: { normal: "#1a5fb4", intense: "#0d3b73" },
-  PREVI: { normal: "#62a0ea", intense: "#3584e4" }
+  AGREE: { normal: "#1a5fb4", intense: "#0d3b73", contourNormal: "#1a5fb4", contourIntense: "#0d3b73" },
+  PREVI: { normal: "#FFD21F", intense: "#F5B800", contourNormal: "#B38600", contourIntense: "#7A5C00" }
 };
 function couleursPourStatut(statut) {
   const s = String(statut || "").trim().toUpperCase();
@@ -178,17 +178,14 @@ async function activerCalqueParesseux(nom) {
 // Motifs de hachures : image SVG (data URI) chargée via Image()
 // puis enregistrée avec map.addImage.
 //
-// Sémiologie graphique : la variable est ordinale (fort enjeu > moindre enjeu),
-// donc épaisseur du trait ET espacement varient dans le même sens :
-// fort enjeu = trait épais + hachures serrées ; moindre enjeu = trait fin + hachures espacées.
 // Les mêmes constantes servent pour la légende et pour la carte.
 // ============================================================
-const HACHURE_FORT_ENJEU    = { tuile: 6,  epaisseur: 1.5 };
-const HACHURE_MOINDRE_ENJEU = { tuile: 14, epaisseur: 0.75 };
+const HACHURE_ENJEUX  = { tuile: 8, epaisseur: 1.5 };
+const COULEUR_FONCIER = "#2ECC40"; // vert
 
-function creerDataUriHachure(tailleTuile, epaisseur) {
+function creerDataUriHachure(tailleTuile, epaisseur, couleur) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tailleTuile}" height="${tailleTuile}">
-    <line x1="0" y1="${tailleTuile}" x2="${tailleTuile}" y2="0" stroke="#000000" stroke-width="${epaisseur}" stroke-opacity="1"/>
+    <line x1="0" y1="${tailleTuile}" x2="${tailleTuile}" y2="0" stroke="${couleur}" stroke-width="${epaisseur}" stroke-opacity="1"/>
   </svg>`;
   return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
 }
@@ -203,22 +200,23 @@ function chargerImage(url) {
 }
 
 async function enregistrerImagesHachures() {
-  if (!map.hasImage("hachure-fort")) {
-    const img = await chargerImage(creerDataUriHachure(HACHURE_FORT_ENJEU.tuile, HACHURE_FORT_ENJEU.epaisseur));
-    map.addImage("hachure-fort", img);
-  }
-  if (!map.hasImage("hachure-faible")) {
-    const img = await chargerImage(creerDataUriHachure(HACHURE_MOINDRE_ENJEU.tuile, HACHURE_MOINDRE_ENJEU.epaisseur));
-    map.addImage("hachure-faible", img);
+  if (!map.hasImage("hachure-enjeux")) {
+    const img = await chargerImage(creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER));
+    map.addImage("hachure-enjeux", img);
   }
 }
 
 // Convertit le résultat colonne-orienté de grist.docApi.fetchTable("Foncier_repere")
-// en FeatureCollection GeoJSON exploitable par MapLibre.
+// en FeatureCollection GeoJSON, en ne gardant que les secteurs "à enjeux".
 function construireGeoJSONFoncier(donnees) {
   const features = [];
   const nbLignes = (donnees.id || []).length;
+  if (!donnees[COL_FONCIER_STRATEGIE]) {
+    console.warn(`Foncier : colonne '${COL_FONCIER_STRATEGIE}' introuvable. Colonnes disponibles :`, Object.keys(donnees));
+    return { type: "FeatureCollection", features };
+  }
   for (let i = 0; i < nbLignes; i++) {
+    if (normaliserTexte(donnees[COL_FONCIER_STRATEGIE][i]) !== normaliserTexte(VALEUR_FONCIER_AFFICHEE)) continue;
     const geometrieBrute = donnees.geometrie_json && donnees.geometrie_json[i];
     if (!geometrieBrute) continue;
     let geometry;
@@ -228,14 +226,11 @@ function construireGeoJSONFoncier(donnees) {
       console.warn("Géométrie foncier illisible pour la ligne", donnees.id[i], e);
       continue;
     }
-    const final = donnees.final ? donnees.final[i] : null;
     features.push({
       type: "Feature",
       geometry,
       properties: {
-        durete: donnees.durete ? donnees.durete[i] : null,
-        final,
-        enjeu: deduireEnjeu(final),
+        final: donnees.final ? donnees.final[i] : null,
         nom_com: donnees.nom_com ? donnees.nom_com[i] : null,
         surf_m2: donnees.surf_m2 ? donnees.surf_m2[i] : null,
       }
@@ -317,42 +312,21 @@ async function initCarte() {
       id: "foncier-remplissage",
       type: "fill",
       source: "foncier",
-      paint: {
-        "fill-color": ["match", ["get", "durete"],
-          "facilement mutable",   COULEUR_DURETE["facilement mutable"],
-          "difficilement mutable",COULEUR_DURETE["difficilement mutable"],
-          COULEUR_DURETE_DEFAUT
-        ],
-        "fill-opacity": 0.45
-      },
+      paint: { "fill-color": COULEUR_FONCIER, "fill-opacity": 0.15 },
       layout: { visibility: "none" }
     }, "prospects-cercles"); // inséré sous les marqueurs
     map.addLayer({
       id: "foncier-hachure",
       type: "fill",
       source: "foncier",
-      paint: {
-        "fill-pattern": ["match", ["get", "enjeu"],
-          "fort enjeu",    "hachure-fort",
-          "moindre enjeu", "hachure-faible",
-          "hachure-faible"
-        ],
-        "fill-opacity": 1
-      },
+      paint: { "fill-pattern": "hachure-enjeux", "fill-opacity": 1 },
       layout: { visibility: "none" }
     }, "prospects-cercles"); // inséré sous les marqueurs
     map.addLayer({
       id: "foncier-contour",
       type: "line",
       source: "foncier",
-      paint: {
-        "line-color": ["match", ["get", "durete"],
-          "facilement mutable",   COULEUR_DURETE["facilement mutable"],
-          "difficilement mutable",COULEUR_DURETE["difficilement mutable"],
-          COULEUR_DURETE_DEFAUT
-        ],
-        "line-width": 1
-      },
+      paint: { "line-color": COULEUR_FONCIER, "line-width": 1.5 },
       layout: { visibility: "none" }
     }, "prospects-cercles"); // inséré sous les marqueurs
 
@@ -363,7 +337,7 @@ async function initCarte() {
       const commune = p.nom_com || "";
       new maplibregl.Popup()
         .setLngLat(e.lngLat)
-        .setHTML(`<b>${p.final || "Secteur foncier"}</b><br>${commune}<br>Dureté : ${p.durete || "—"} · Enjeu : ${p.enjeu || "—"}${p.surf_m2 ? "<br>Surface : "+Math.round(p.surf_m2).toLocaleString("fr-FR")+" m²" : ""}`)
+        .setHTML(`<b>${p.final || "Secteur à enjeux"}</b><br>${commune}${p.surf_m2 ? "<br>Surface : "+Math.round(p.surf_m2).toLocaleString("fr-FR")+" m²" : ""}`)
         .addTo(map);
     });
     map.on("mouseenter", "foncier-remplissage", () => { map.getCanvas().style.cursor = "pointer"; });
@@ -380,7 +354,7 @@ async function initCarte() {
       "circle-radius":        ["case", ["get", "selectionne"], 9, 6],
       "circle-color":         ["case", ["get", "selectionne"], ["get", "couleurIntense"], ["get", "couleurNormal"]],
       "circle-opacity":       ["case", ["get", "selectionne"], 0.85, 0.55],
-      "circle-stroke-color":  ["case", ["get", "selectionne"], ["get", "couleurIntense"], ["get", "couleurNormal"]],
+      "circle-stroke-color":  ["case", ["get", "selectionne"], ["get", "contourIntense"], ["get", "contourNormal"]],
       "circle-stroke-width":  ["case", ["get", "selectionne"], 2, 1.5],
       "circle-stroke-opacity":["case", ["get", "selectionne"], 1, 0.75]
     }
@@ -412,10 +386,36 @@ async function initCarte() {
   });
   map.moveLayer("op-cercles"); // les OP restent au-dessus des prospects
 
+  // --- Noms des opérations (étiquettes discrètes, masquées par défaut) ---
+  map.addLayer({
+    id: "op-noms",
+    type: "symbol",
+    source: "op",
+    minzoom: 12,
+    layout: {
+      visibility: "none",
+      "text-field": ["get", "libelle"],
+      "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+      "text-size": 10,
+      "text-anchor": "top",
+      "text-offset": [0, 0.9],
+      "text-max-width": 8,
+      "text-padding": 3,
+      "text-allow-overlap": false,
+      "text-optional": true,
+      "symbol-sort-key": ["case", ["get", "selectionne"], 0, 1]
+    },
+    paint: {
+      "text-color": "#1b1b1b",
+      "text-halo-color": "rgba(255,255,255,0.95)",
+      "text-halo-width": 1.5
+    }
+  });
+
   map.on("click", "prospects-cercles", e => {
     const f = e.features[0];
     if (popupOuvert) popupOuvert.remove();
-    popupOuvert = new maplibregl.Popup().setLngLat(f.geometry.coordinates).setHTML(f.properties.popupHtml).addTo(map);
+    popupOuvert = new maplibregl.Popup({ className: "popup-compact", closeButton: false, maxWidth: "220px" }).setLngLat(f.geometry.coordinates).setHTML(f.properties.popupHtml).addTo(map);
   });
   map.on("mouseenter", "prospects-cercles", () => { map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "prospects-cercles", () => { map.getCanvas().style.cursor = ""; });
@@ -425,7 +425,7 @@ async function initCarte() {
   // --- Contrôle foncier / prospects + légende (haut droit) ---
   const swatchOP = statut => {
     const c = COULEURS_STATUT_OP[statut];
-    return `<span class="legende-swatch" style="background:${c.normal};border-color:${c.intense};border-radius:50%"></span>`;
+    return `<span class="legende-swatch" style="background:${c.normal};border-color:${c.contourNormal};border-radius:50%"></span>`;
   };
   class ControleFoncier {
     onAdd(mapInstance) {
@@ -434,16 +434,12 @@ async function initCarte() {
       this._div.className = "maplibregl-ctrl controle-cadastre";
       this._div.innerHTML = `
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
+        <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteur à enjeux</div>
         <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:${COULEUR_PROSPECTS};border-radius:50%;width:9px;height:9px"></span> Prospects 2026</label>
         <div class="groupe-titre">Opérations</div>
-        <div class="legende-item">${swatchOP("AGREE")}Agréée (AGREE)</div>
-        <div class="legende-item">${swatchOP("PREVI")}Prévisionnelle (PREVI)</div>
-        <div class="groupe-titre">Dureté</div>
-        <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["facilement mutable"]}"></span>Facilement mutable</div>
-        <div class="legende-item"><span class="legende-swatch" style="background:${COULEUR_DURETE["difficilement mutable"]}"></span>Difficilement mutable</div>
-        <div class="groupe-titre">Enjeu (hachures)</div>
-        <div class="legende-item"><span class="legende-swatch" style="background-image:url('${creerDataUriHachure(HACHURE_FORT_ENJEU.tuile, HACHURE_FORT_ENJEU.epaisseur)}');background-repeat:repeat;background-size:${HACHURE_FORT_ENJEU.tuile}px ${HACHURE_FORT_ENJEU.tuile}px"></span>Fort enjeu</div>
-        <div class="legende-item"><span class="legende-swatch" style="background-image:url('${creerDataUriHachure(HACHURE_MOINDRE_ENJEU.tuile, HACHURE_MOINDRE_ENJEU.epaisseur)}');background-repeat:repeat;background-size:${HACHURE_MOINDRE_ENJEU.tuile}px ${HACHURE_MOINDRE_ENJEU.tuile}px"></span>Moindre enjeu</div>
+        <div class="legende-item">${swatchOP("AGREE")}Agréée</div>
+        <div class="legende-item">${swatchOP("PREVI")}Prévisionnelle 2026/28</div>
+        <label><input type="checkbox" id="toggle-noms"> Noms des opérations</label>
       `;
       return this._div;
     }
@@ -453,6 +449,10 @@ async function initCarte() {
 
   document.getElementById("toggle-prospects").addEventListener("change", e => {
     map.setLayoutProperty("prospects-cercles", "visibility", e.target.checked ? "visible" : "none");
+  });
+
+  document.getElementById("toggle-noms").addEventListener("change", e => {
+    map.setLayoutProperty("op-noms", "visibility", e.target.checked ? "visible" : "none");
   });
 
   document.getElementById("toggle-foncier").addEventListener("change", async e => {
@@ -509,6 +509,9 @@ function construireGeoJSON(records) {
         selectionne: estSelectionne,
         couleurNormal: couleurs.normal,
         couleurIntense: couleurs.intense,
+        contourNormal: couleurs.contourNormal,
+        contourIntense: couleurs.contourIntense,
+        libelle: r[COL_TITRE] || "",
         popupHtml: construirePopupHtml(r)
       }
     };
