@@ -101,7 +101,8 @@ const ZOOM_DEFAUT   = 10;
 // Les colonnes sont détectées automatiquement parmi ces candidats (insensible à la casse).
 // Si une colonne n'est pas trouvée, ajoute son nom exact en tête de la liste correspondante.
 const TABLE_PROSPECTS = "Prospects_PB_2026";
-const CANDIDATS_PROSPECTS = {
+// Candidats de noms de colonnes, communs aux 3 séries de points (Prospects, PB_AT, PB_ST).
+const CANDIDATS_COLONNES_SERIE = {
   lat:     ["latitude", "lat", "y"],
   lon:     ["longitude", "lon", "lng", "long", "x"],
   titre:   ["Libelle", "Nom", "Intitule", "Titre", "Proprietaire", "Adresse_normalisee", "Adresse"],
@@ -110,11 +111,15 @@ const CANDIDATS_PROSPECTS = {
   statut:  ["Statut", "Etat"]
 };
 const COULEUR_PROSPECTS = "#E53935"; // rouge
-const RAYON_PROSPECTS   = 4;         // plus petit que les OP (6, ou 9 si sélectionné)
+// Rayon croissant avec le zoom (sinon un rayon fixe en pixels devient quasi invisible une
+// fois zoomé sur une parcelle) : plus petit que les OP (6, ou 9 si sélectionné) à faible zoom,
+// mais continue de grandir au-delà.
+const RAYON_PROSPECTS = ["interpolate", ["linear"], ["zoom"], 10, 4, 14, 6, 18, 10];
 
 // --- Séries de points supplémentaires (tables PB_AT et PB_ST), mêmes colonnes détectées que les prospects.
-// Rayon intermédiaire : plus gros que les prospects (4), plus petit que les OP (6).
-const RAYON_PB = 5;
+// Rayon intermédiaire : plus gros que les prospects, plus petit que les OP à faible zoom, et
+// croît lui aussi avec le zoom pour rester visible.
+const RAYON_PB = ["interpolate", ["linear"], ["zoom"], 10, 5, 14, 7, 18, 11];
 const SERIES_PB = [
   { cle: "pb-at", table: "PB_AT", libelle: "PB_AT", couleur: "#8E44AD", classePopup: "popup-pb-at" }, // violet
   { cle: "pb-st", table: "PB_ST", libelle: "PB_ST", couleur: "#F57C00", classePopup: "popup-pb-st" }  // orange
@@ -324,16 +329,16 @@ function trouverColonne(donnees, candidats) {
 
 async function chargerSeriePoints(table, idSource, titreDefaut) {
   const donnees = await grist.docApi.fetchTable(table);
-  const cLat = trouverColonne(donnees, CANDIDATS_PROSPECTS.lat);
-  const cLon = trouverColonne(donnees, CANDIDATS_PROSPECTS.lon);
+  const cLat = trouverColonne(donnees, CANDIDATS_COLONNES_SERIE.lat);
+  const cLon = trouverColonne(donnees, CANDIDATS_COLONNES_SERIE.lon);
   if (!cLat || !cLon) {
     console.warn(`${table} : colonnes latitude/longitude introuvables. Colonnes disponibles :`, Object.keys(donnees));
     return;
   }
-  const cTitre   = trouverColonne(donnees, CANDIDATS_PROSPECTS.titre);
-  const cAdresse = trouverColonne(donnees, CANDIDATS_PROSPECTS.adresse);
-  const cCommune = trouverColonne(donnees, CANDIDATS_PROSPECTS.commune);
-  const cStatut  = trouverColonne(donnees, CANDIDATS_PROSPECTS.statut);
+  const cTitre   = trouverColonne(donnees, CANDIDATS_COLONNES_SERIE.titre);
+  const cAdresse = trouverColonne(donnees, CANDIDATS_COLONNES_SERIE.adresse);
+  const cCommune = trouverColonne(donnees, CANDIDATS_COLONNES_SERIE.commune);
+  const cStatut  = trouverColonne(donnees, CANDIDATS_COLONNES_SERIE.statut);
 
   const features = [];
   const nb = (donnees.id || []).length;
@@ -398,7 +403,10 @@ function appliquerSelectionVisuelle(rowId) {
 }
 
 // ---------- Filtre par commune (affichage uniquement) ----------
-const CALQUES_FILTRABLES = ["op-cercles", "op-selection", "op-noms", "prospects-cercles", "pb-at-cercles", "pb-st-cercles",
+// Les calques des séries PB sont déduits de SERIES_PB (serie.cle + "-cercles") : une série
+// ajoutée là-bas est automatiquement filtrée par commune ici, sans modification à faire.
+const CALQUES_FILTRABLES = ["op-cercles", "op-selection", "op-noms", "prospects-cercles",
+                            ...SERIES_PB.map(serie => serie.cle + "-cercles"),
                             "foncier-remplissage", "foncier-hachure", "foncier-contour"];
 
 function appliquerFiltreCommune() {
@@ -476,6 +484,23 @@ async function initCarte() {
   }));
 
   await new Promise(resolve => map.on("load", resolve));
+
+  // --- Cadastre DGFiP (raster WMTS IGN) — ajouté caché, affiché via la case, sans opacité réduite ---
+  map.addSource("cadastre", {
+    type: "raster",
+    tiles: [
+      "https://data.geopf.fr/wmts?layer=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&style=PCI%20vecteur&tilematrixset=PM_0_19&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/png&TileMatrix={z}&TileCol={x}&TileRow={y}"
+    ],
+    tileSize: 256,
+    minzoom: 0,
+    maxzoom: 22
+  });
+  map.addLayer({
+    id: "cadastre",
+    type: "raster",
+    source: "cadastre",
+    layout: { visibility: "none" }
+  });
 
   // --- Prospects (table Prospects_PB_2026) : petits points rouges, sans contour ---
   map.addSource("prospects", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -641,6 +666,7 @@ async function initCarte() {
       this._div.innerHTML = `
         <div class="groupe-titre" style="margin-top:0">Commune</div>
         <select id="select-commune"><option value="">Toutes les communes</option></select>
+        <label><input type="checkbox" id="toggle-cadastre"> Cadastre</label>
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
         <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteurs à enjeux repérés</div>
         <div id="foncier-note" style="margin-left:20px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
@@ -656,6 +682,10 @@ async function initCarte() {
     onRemove() { this._div.remove(); this._map = undefined; }
   }
   map.addControl(new ControleLegende(), "top-right");
+
+  document.getElementById("toggle-cadastre").addEventListener("change", e => {
+    map.setLayoutProperty("cadastre", "visibility", e.target.checked ? "visible" : "none");
+  });
 
   document.getElementById("toggle-prospects").addEventListener("change", e => {
     map.setLayoutProperty("prospects-cercles", "visibility", e.target.checked ? "visible" : "none");
