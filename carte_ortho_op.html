@@ -110,11 +110,14 @@ const CANDIDATS_COLONNES_SERIE = {
   commune: ["Commune", "nom_com", "Ville"],
   statut:  ["Statut", "Etat"]
 };
-const COULEUR_PROSPECTS = "#E53935"; // rouge
-// Rayon croissant avec le zoom (sinon un rayon fixe en pixels devient quasi invisible une
-// fois zoomé sur une parcelle) : plus petit que les OP (6, ou 9 si sélectionné) à faible zoom,
-// mais continue de grandir au-delà.
-const RAYON_PROSPECTS = ["interpolate", ["linear"], ["zoom"], 10, 4, 14, 6, 18, 10];
+// Prospects : carré avec contour blanc et intérieur transparent (icône SVG, pas un cercle plein).
+const COULEUR_PROSPECTS = "#ffffff"; // couleur du contour
+const TAILLE_ICONE_PROSPECTS = 20;   // résolution de base de l'image (px) ; mise à l'échelle ensuite via icon-size
+const EPAISSEUR_CONTOUR_PROSPECTS = 2;
+// Taille affichée (multiplicateur de TAILLE_ICONE_PROSPECTS), croissante avec le zoom — même
+// logique que pour les marqueurs ronds : une taille fixe deviendrait minuscule une fois zoomé
+// sur une parcelle.
+const TAILLE_PROSPECTS = ["interpolate", ["linear"], ["zoom"], 10, 0.4, 14, 0.6, 18, 1.0];
 
 // --- Séries de points supplémentaires (tables PB_AT et PB_ST), mêmes colonnes détectées que les prospects.
 // Rayon intermédiaire : plus gros que les prospects, plus petit que les OP à faible zoom, et
@@ -272,6 +275,22 @@ async function enregistrerImagesHachures() {
   if (!map.hasImage("hachure-enjeux")) {
     const img = await chargerImage(creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER));
     map.addImage("hachure-enjeux", img);
+  }
+}
+
+// Carré creux (contour seul, intérieur transparent) pour l'icône des Prospects.
+function creerDataUriCarre(taille, epaisseur, couleur) {
+  const demi = epaisseur / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${taille}" height="${taille}">
+    <rect x="${demi}" y="${demi}" width="${taille - epaisseur}" height="${taille - epaisseur}" fill="none" stroke="${couleur}" stroke-width="${epaisseur}"/>
+  </svg>`;
+  return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
+}
+
+async function enregistrerIconeProspects() {
+  if (!map.hasImage("carre-prospects")) {
+    const img = await chargerImage(creerDataUriCarre(TAILLE_ICONE_PROSPECTS, EPAISSEUR_CONTOUR_PROSPECTS, COULEUR_PROSPECTS));
+    map.addImage("carre-prospects", img);
   }
 }
 
@@ -502,17 +521,20 @@ async function initCarte() {
     layout: { visibility: "none" }
   });
 
-  // --- Prospects (table Prospects_PB_2026) : petits points rouges, sans contour ---
+  // --- Prospects (table Prospects_PB_2026) : carrés à contour blanc, intérieur transparent.
+  // L'id de calque "prospects-cercles" est conservé tel quel (filtre commune, clic, case à
+  // cocher en dépendent) même si ce n'est plus un cercle, pour limiter l'ampleur du changement.
+  await enregistrerIconeProspects();
   map.addSource("prospects", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({
     id: "prospects-cercles",
-    type: "circle",
+    type: "symbol",
     source: "prospects",
-    paint: {
-      "circle-radius": RAYON_PROSPECTS,
-      "circle-color": COULEUR_PROSPECTS,
-      "circle-opacity": 0.85,
-      "circle-stroke-width": 0
+    layout: {
+      "icon-image": "carre-prospects",
+      "icon-size": TAILLE_PROSPECTS,
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true
     }
   });
   map.on("click", "prospects-cercles", e => {
@@ -670,7 +692,7 @@ async function initCarte() {
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
         <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteurs à enjeux repérés</div>
         <div id="foncier-note" style="margin-left:20px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
-        <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:${COULEUR_PROSPECTS};border-radius:50%;width:9px;height:9px"></span> Prospects 2026</label>
+        <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:rgba(0,0,0,0.35);border:2px solid ${COULEUR_PROSPECTS};width:9px;height:9px"></span> Prospects 2026</label>
         ${SERIES_PB.map(serie => `<label><input type="checkbox" id="toggle-${serie.cle}" checked> <span class="legende-swatch" style="background:${serie.couleur};border-radius:50%;width:10px;height:10px"></span> ${serie.libelle}</label>`).join("")}
         <div class="groupe-titre">Opérations</div>
         <div class="legende-item">${pastilleOP("AGREE")}Agréée</div>
