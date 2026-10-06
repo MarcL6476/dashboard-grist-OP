@@ -123,6 +123,11 @@ const TAILLE_PROSPECTS = ["interpolate", ["linear"], ["zoom"], 10, 0.4, 14, 0.6,
 // Rayon intermédiaire : plus gros que les prospects, plus petit que les OP à faible zoom, et
 // croît lui aussi avec le zoom pour rester visible.
 const RAYON_PB = ["interpolate", ["linear"], ["zoom"], 10, 5, 14, 7, 18, 11];
+
+// --- Rayons des marqueurs OP (opérations agréées/prévi), croissants avec le zoom eux aussi,
+// pour qu'ils restent visuellement plus gros que les Prospects et PB à tous les niveaux de zoom.
+const RAYON_OP            = ["interpolate", ["linear"], ["zoom"], 10, 6, 14, 9,  18, 13];
+const RAYON_OP_SELECTION  = ["interpolate", ["linear"], ["zoom"], 10, 9, 14, 12, 18, 16];
 const SERIES_PB = [
   { cle: "pb-at", table: "PB_AT", libelle: "PB_AT", couleur: "#8E44AD", classePopup: "popup-pb-at" }, // violet
   { cle: "pb-st", table: "PB_ST", libelle: "PB_ST", couleur: "#F57C00", classePopup: "popup-pb-st" }  // orange
@@ -619,7 +624,7 @@ async function initCarte() {
     type: "circle",
     source: "op",
     paint: {
-      "circle-radius": 6,
+      "circle-radius": RAYON_OP,
       "circle-color": ["get", "couleurNormal"],
       "circle-opacity": 0.55,
       "circle-stroke-color": "#ffffff",
@@ -635,7 +640,7 @@ async function initCarte() {
     type: "circle",
     source: "op-selection",
     paint: {
-      "circle-radius": 9,
+      "circle-radius": RAYON_OP_SELECTION,
       "circle-color": ["get", "couleurIntense"],
       "circle-opacity": 0.85,
       "circle-stroke-color": "#ffffff",
