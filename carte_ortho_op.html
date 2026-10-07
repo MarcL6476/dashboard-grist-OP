@@ -110,8 +110,8 @@ const CANDIDATS_COLONNES_SERIE = {
   commune: ["Commune", "nom_com", "Ville"],
   statut:  ["Statut", "Etat"]
 };
-// Prospects : carré avec contour blanc et intérieur transparent (icône SVG, pas un cercle plein).
-const COULEUR_PROSPECTS = "#ffffff"; // couleur du contour
+// Prospects : carré avec contour bleu et intérieur transparent (icône SVG, pas un cercle plein).
+const COULEUR_PROSPECTS = "#1E90FF"; // couleur du contour (bleu)
 const TAILLE_ICONE_PROSPECTS = 20;   // résolution de base des images (px) ; mise à l'échelle ensuite via icon-size
 // Contour "progressif" : 3 images à la même résolution de base, mais avec un contour de plus en
 // plus épais par rapport à la taille du carré (7,5 % puis 17,5 % puis 30 %). On bascule de l'une
@@ -145,8 +145,8 @@ const RAYON_OP_SELECTION  = ["interpolate", ["linear"], ["zoom"], 10, 9, 14, 12,
 // Même famille de teintes (froides) pour PB_AT et PB_ST, afin qu'aucune des deux ne ressorte
 // plus que l'autre — contrairement à l'ancien violet/orange, trop contrastés entre eux.
 const SERIES_PB = [
-  { cle: "pb-at", table: "PB_AT", libelle: "PB_AT", couleur: "#7B52AB", classePopup: "popup-pb-at" }, // violet
-  { cle: "pb-st", table: "PB_ST", libelle: "PB_ST", couleur: "#B23A72", classePopup: "popup-pb-st" }  // magenta-rose
+  { cle: "pb-at", table: "PB_AT", libelle: "PB_AT", legende: "PB_AT — avec travaux (AT)", couleur: "#7B52AB", classePopup: "popup-pb-at" }, // violet
+  { cle: "pb-st", table: "PB_ST", libelle: "PB_ST", legende: "PB_ST — sans travaux (ST)", couleur: "#B23A72", classePopup: "popup-pb-st" }  // magenta-rose
 ];
 
 // --- Fond de carte : orthophotographie IGN Géoplateforme (WMTS), gratuite et sans clé ---
@@ -175,6 +175,12 @@ const COL_FONCIER_STRATEGIE = "strategie";
 const VALEUR_FONCIER_AFFICHEE = "à enjeu";
 const COULEUR_FONCIER = "#2ECC40"; // vert
 const HACHURE_ENJEUX  = { tuile: 8, epaisseur: 1.5 };
+// Secteurs à moindre enjeu (même table, même colonne) : hachures vert clair.
+// Reconnu dès que la valeur de "strategie" contient "moindre" (accents/casse ignorés).
+const MOT_CLE_FONCIER_MOINDRE = "moindre";
+const COULEUR_FONCIER_MOINDRE = "#9BE58F"; // vert clair
+const IDS_CALQUES_FONCIER = ["foncier-remplissage", "foncier-hachure", "foncier-contour",
+                             "foncier-moindre-remplissage", "foncier-moindre-hachure", "foncier-moindre-contour"];
 
 // --- Couleurs des marqueurs OP selon la colonne STATUT ---
 // Tout autre statut (ou statut vide) est affiché comme AGREE.
@@ -297,6 +303,10 @@ async function enregistrerImagesHachures() {
     const img = await chargerImage(creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER));
     map.addImage("hachure-enjeux", img);
   }
+  if (!map.hasImage("hachure-moindre")) {
+    const img = await chargerImage(creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER_MOINDRE));
+    map.addImage("hachure-moindre", img);
+  }
 }
 
 // Carré creux (contour seul, intérieur transparent) pour l'icône des Prospects.
@@ -318,7 +328,7 @@ async function enregistrerIconesProspects() {
 
 // Convertit le résultat colonne-orienté de grist.docApi.fetchTable("Foncier_repere")
 // en FeatureCollection GeoJSON, en ne gardant que les secteurs "à enjeu".
-function construireGeoJSONFoncier(donnees) {
+function construireGeoJSONFoncier(donnees, estMoindre = false) {
   const features = [];
   const nbLignes = (donnees.id || []).length;
   const cle = Object.keys(donnees).find(k => normaliserTexte(k) === normaliserTexte(COL_FONCIER_STRATEGIE));
@@ -327,10 +337,13 @@ function construireGeoJSONFoncier(donnees) {
     return { type: "FeatureCollection", features, diagnostic: `colonne '${COL_FONCIER_STRATEGIE}' introuvable` };
   }
   const cible = normaliserTexte(VALEUR_FONCIER_AFFICHEE);
+  const correspond = v => estMoindre
+    ? normaliserTexte(v).includes(MOT_CLE_FONCIER_MOINDRE)
+    : normaliserTexte(v) === cible;
   const valeursVues = new Set();
   for (let i = 0; i < nbLignes; i++) {
     valeursVues.add(JSON.stringify(donnees[cle][i]));
-    if (normaliserTexte(donnees[cle][i]) !== cible) continue;
+    if (!correspond(donnees[cle][i])) continue;
     const geometrieBrute = donnees.geometrie_json && donnees.geometrie_json[i];
     if (!geometrieBrute) continue;
     let geometry;
@@ -351,8 +364,8 @@ function construireGeoJSONFoncier(donnees) {
       }
     });
   }
-  console.info(`Foncier : ${features.length} secteur(s) '${VALEUR_FONCIER_AFFICHEE}' sur ${nbLignes} ligne(s). Valeurs de '${cle}' :`, [...valeursVues]);
-  const diagnostic = features.length ? "" : `aucune ligne '${VALEUR_FONCIER_AFFICHEE}' dans '${cle}' (${[...valeursVues].slice(0, 4).join(", ")})`;
+  console.info(`Foncier${estMoindre ? " (moindre enjeu)" : ""} : ${features.length} secteur(s) sur ${nbLignes} ligne(s). Valeurs de '${cle}' :`, [...valeursVues]);
+  const diagnostic = (features.length || estMoindre) ? "" : `aucune ligne '${VALEUR_FONCIER_AFFICHEE}' dans '${cle}' (${[...valeursVues].slice(0, 4).join(", ")})`;
   return { type: "FeatureCollection", features, diagnostic };
 }
 
@@ -448,7 +461,7 @@ function appliquerSelectionVisuelle(rowId) {
 // ajoutée là-bas est automatiquement filtrée par commune ici, sans modification à faire.
 const CALQUES_FILTRABLES = ["op-cercles", "op-selection", "op-noms", "prospects-cercles",
                             ...SERIES_PB.map(serie => serie.cle + "-cercles"),
-                            "foncier-remplissage", "foncier-hachure", "foncier-contour"];
+                            ...IDS_CALQUES_FONCIER];
 
 function appliquerFiltreCommune() {
   const filtre = communeFiltre ? ["==", ["get", "communeCle"], communeFiltre] : null;
@@ -595,12 +608,37 @@ async function initCarte() {
   declarerCalqueParesseux("foncier", async () => {
     const donnees = await grist.docApi.fetchTable(TABLE_FONCIER);
     const geojson = construireGeoJSONFoncier(donnees);
+    const geojsonMoindre = construireGeoJSONFoncier(donnees, true);
 
     const note = document.getElementById("foncier-note");
     if (note) note.textContent = geojson.diagnostic ? "⚠ " + geojson.diagnostic : "";
 
     await enregistrerImagesHachures();
     map.addSource("foncier", { type: "geojson", data: geojson });
+    map.addSource("foncier-moindre", { type: "geojson", data: geojsonMoindre });
+
+    // Moindre enjeu : ajouté en premier, donc sous les secteurs à enjeu
+    map.addLayer({
+      id: "foncier-moindre-remplissage",
+      type: "fill",
+      source: "foncier-moindre",
+      paint: { "fill-color": COULEUR_FONCIER_MOINDRE, "fill-opacity": 0.15 },
+      layout: { visibility: "none" }
+    }, "prospects-cercles");
+    map.addLayer({
+      id: "foncier-moindre-hachure",
+      type: "fill",
+      source: "foncier-moindre",
+      paint: { "fill-pattern": "hachure-moindre", "fill-opacity": 1 },
+      layout: { visibility: "none" }
+    }, "prospects-cercles");
+    map.addLayer({
+      id: "foncier-moindre-contour",
+      type: "line",
+      source: "foncier-moindre",
+      paint: { "line-color": COULEUR_FONCIER_MOINDRE, "line-width": 1.5 },
+      layout: { visibility: "none" }
+    }, "prospects-cercles");
 
     // Inséré sous les marqueurs : foncier (couleur, hachures, contour) < prospects < OP
     map.addLayer({
@@ -631,6 +669,13 @@ async function initCarte() {
       ouvrirPopup(e.lngLat, construireContenuPopup(p.final || "Secteur à enjeu", p.nom_com, surface, ""), "popup-foncier");
     });
     curseurMainSurCalque("foncier-remplissage");
+    map.on("click", "foncier-moindre-remplissage", e => {
+      if (map.queryRenderedFeatures(e.point, { layers: ["foncier-remplissage"] }).length) return; // l'enjeu fort prime
+      const p = e.features[0].properties;
+      const surface = p.surf_m2 ? "Surface : " + Math.round(p.surf_m2).toLocaleString("fr-FR") + " m²" : "";
+      ouvrirPopup(e.lngLat, construireContenuPopup(p.final || "Secteur à moindre enjeu", p.nom_com, surface, ""), "popup-foncier");
+    });
+    curseurMainSurCalque("foncier-moindre-remplissage");
     appliquerFiltreCommune();
   });
 
@@ -713,9 +758,10 @@ async function initCarte() {
         <label><input type="checkbox" id="toggle-cadastre"> Cadastre</label>
         <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
         <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteurs à enjeux repérés</div>
+        <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(155,229,143,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER_MOINDRE)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER_MOINDRE}"></span>Secteurs à moindre enjeu</div>
         <div id="foncier-note" style="margin-left:20px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
         <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:rgba(0,0,0,0.35);border:2px solid ${COULEUR_PROSPECTS};width:9px;height:9px"></span> Prospects 2026</label>
-        ${SERIES_PB.map(serie => `<label><input type="checkbox" id="toggle-${serie.cle}" checked> <span class="legende-swatch" style="background:${serie.couleur};border-radius:50%;width:10px;height:10px"></span> ${serie.libelle}</label>`).join("")}
+        ${SERIES_PB.map(serie => `<label><input type="checkbox" id="toggle-${serie.cle}" checked> <span class="legende-swatch" style="background:${serie.couleur};border-radius:50%;width:10px;height:10px"></span> ${serie.legende || serie.libelle}</label>`).join("")}
         <div class="groupe-titre">Opérations</div>
         <div class="legende-item">${pastilleOP("AGREE")}Agréée</div>
         <div class="legende-item">${pastilleOP("PREVI")}Prévisionnelle 2026/28</div>
@@ -754,7 +800,7 @@ async function initCarte() {
 
   document.getElementById("toggle-foncier").addEventListener("change", async e => {
     const checkbox = e.target;
-    const idsCalque = ["foncier-remplissage", "foncier-hachure", "foncier-contour"];
+    const idsCalque = IDS_CALQUES_FONCIER;
     if (checkbox.checked) {
       checkbox.disabled = true;
       await activerCalqueParesseux("foncier");
