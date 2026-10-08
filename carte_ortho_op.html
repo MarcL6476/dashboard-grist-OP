@@ -178,9 +178,12 @@ const HACHURE_ENJEUX  = { tuile: 8, epaisseur: 1.5 };
 // Secteurs à moindre enjeu (même table, même colonne) : hachures vert clair.
 // Reconnu dès que la valeur de "strategie" contient "moindre" (accents/casse ignorés).
 const MOT_CLE_FONCIER_MOINDRE = "moindre";
-const COULEUR_FONCIER_MOINDRE = "#9BE58F"; // vert clair
-const IDS_CALQUES_FONCIER = ["foncier-remplissage", "foncier-hachure", "foncier-contour",
-                             "foncier-moindre-remplissage", "foncier-moindre-hachure", "foncier-moindre-contour"];
+const COULEUR_FONCIER_MOINDRE = "#C9F29B"; // vert clair jaunâtre, bien distinct du vert vif des enjeux
+// Hachures moindre enjeu : sens inverse (\), plus espacées ; contour en pointillés
+const HACHURE_MOINDRE = { tuile: 12, epaisseur: 1.5 };
+const IDS_FONCIER_ENJEU   = ["foncier-remplissage", "foncier-hachure", "foncier-contour"];
+const IDS_FONCIER_MOINDRE = ["foncier-moindre-remplissage", "foncier-moindre-hachure", "foncier-moindre-contour"];
+const IDS_CALQUES_FONCIER = [...IDS_FONCIER_ENJEU, ...IDS_FONCIER_MOINDRE];
 
 // --- Couleurs des marqueurs OP selon la colonne STATUT ---
 // Tout autre statut (ou statut vide) est affiché comme AGREE.
@@ -282,9 +285,9 @@ async function activerCalqueParesseux(nom) {
 // puis enregistrée avec map.addImage. Les mêmes constantes servent
 // pour la légende et pour la carte.
 // ============================================================
-function creerDataUriHachure(tailleTuile, epaisseur, couleur) {
+function creerDataUriHachure(tailleTuile, epaisseur, couleur, inverse = false) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tailleTuile}" height="${tailleTuile}">
-    <line x1="0" y1="${tailleTuile}" x2="${tailleTuile}" y2="0" stroke="${couleur}" stroke-width="${epaisseur}" stroke-opacity="1"/>
+    <line x1="0" y1="${inverse ? 0 : tailleTuile}" x2="${tailleTuile}" y2="${inverse ? tailleTuile : 0}" stroke="${couleur}" stroke-width="${epaisseur}" stroke-opacity="1"/>
   </svg>`;
   return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
 }
@@ -304,7 +307,7 @@ async function enregistrerImagesHachures() {
     map.addImage("hachure-enjeux", img);
   }
   if (!map.hasImage("hachure-moindre")) {
-    const img = await chargerImage(creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER_MOINDRE));
+    const img = await chargerImage(creerDataUriHachure(HACHURE_MOINDRE.tuile, HACHURE_MOINDRE.epaisseur, COULEUR_FONCIER_MOINDRE, true));
     map.addImage("hachure-moindre", img);
   }
 }
@@ -622,7 +625,7 @@ async function initCarte() {
       id: "foncier-moindre-remplissage",
       type: "fill",
       source: "foncier-moindre",
-      paint: { "fill-color": COULEUR_FONCIER_MOINDRE, "fill-opacity": 0.15 },
+      paint: { "fill-color": COULEUR_FONCIER_MOINDRE, "fill-opacity": 0.25 },
       layout: { visibility: "none" }
     }, "prospects-cercles");
     map.addLayer({
@@ -636,7 +639,7 @@ async function initCarte() {
       id: "foncier-moindre-contour",
       type: "line",
       source: "foncier-moindre",
-      paint: { "line-color": COULEUR_FONCIER_MOINDRE, "line-width": 1.5 },
+      paint: { "line-color": COULEUR_FONCIER_MOINDRE, "line-width": 2, "line-dasharray": [3, 2] },
       layout: { visibility: "none" }
     }, "prospects-cercles");
 
@@ -756,10 +759,10 @@ async function initCarte() {
         <div class="groupe-titre" style="margin-top:0">Commune</div>
         <select id="select-commune"><option value="">Toutes les communes</option></select>
         <label><input type="checkbox" id="toggle-cadastre"> Cadastre</label>
-        <label><input type="checkbox" id="toggle-foncier"> Foncier repéré</label>
-        <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span>Secteurs à enjeux repérés</div>
-        <div class="legende-item" style="margin-left:20px"><span class="legende-swatch" style="background-color:rgba(155,229,143,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER_MOINDRE)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER_MOINDRE}"></span>Secteurs à moindre enjeu</div>
-        <div id="foncier-note" style="margin-left:20px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
+        <div class="groupe-titre">Foncier repéré</div>
+        <label><input type="checkbox" id="toggle-foncier"> <span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span> Secteurs à enjeux</label>
+        <label><input type="checkbox" id="toggle-foncier-moindre"> <span class="legende-swatch" style="background-color:rgba(201,242,155,0.25);background-image:url('${creerDataUriHachure(HACHURE_MOINDRE.tuile, HACHURE_MOINDRE.epaisseur, COULEUR_FONCIER_MOINDRE, true)}');background-repeat:repeat;background-size:${HACHURE_MOINDRE.tuile}px ${HACHURE_MOINDRE.tuile}px;border:1px dashed ${COULEUR_FONCIER_MOINDRE}"></span> Secteurs à moindre enjeu</label>
+        <div id="foncier-note" style="margin-left:4px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
         <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:rgba(0,0,0,0.35);border:2px solid ${COULEUR_PROSPECTS};width:9px;height:9px"></span> Prospects 2026</label>
         ${SERIES_PB.map(serie => `<label><input type="checkbox" id="toggle-${serie.cle}" checked> <span class="legende-swatch" style="background:${serie.couleur};border-radius:50%;width:10px;height:10px"></span> ${serie.legende || serie.libelle}</label>`).join("")}
         <div class="groupe-titre">Opérations</div>
@@ -798,19 +801,21 @@ async function initCarte() {
     cadrerSurCommune();
   });
 
-  document.getElementById("toggle-foncier").addEventListener("change", async e => {
-    const checkbox = e.target;
-    const idsCalque = IDS_CALQUES_FONCIER;
-    if (checkbox.checked) {
-      checkbox.disabled = true;
-      await activerCalqueParesseux("foncier");
-      checkbox.disabled = false;
-      if (checkbox.checked && calquesParesseux.foncier.charge) {
-        idsCalque.forEach(id => map.setLayoutProperty(id, "visibility", "visible"));
+  // Les deux familles de foncier se chargent ensemble (une seule lecture), mais s'affichent indépendamment.
+  [["toggle-foncier", IDS_FONCIER_ENJEU], ["toggle-foncier-moindre", IDS_FONCIER_MOINDRE]].forEach(([idCase, idsCalque]) => {
+    document.getElementById(idCase).addEventListener("change", async e => {
+      const checkbox = e.target;
+      if (checkbox.checked) {
+        checkbox.disabled = true;
+        await activerCalqueParesseux("foncier");
+        checkbox.disabled = false;
+        if (checkbox.checked && calquesParesseux.foncier.charge) {
+          idsCalque.forEach(id => map.setLayoutProperty(id, "visibility", "visible"));
+        }
+      } else if (calquesParesseux.foncier.charge) {
+        idsCalque.forEach(id => map.setLayoutProperty(id, "visibility", "none"));
       }
-    } else if (calquesParesseux.foncier.charge) {
-      idsCalque.forEach(id => map.setLayoutProperty(id, "visibility", "none"));
-    }
+    });
   });
 }
 
