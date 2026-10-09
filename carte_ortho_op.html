@@ -119,9 +119,9 @@ const TAILLE_ICONE_PROSPECTS = 20;   // résolution de base des images (px) ; mi
 // TAILLE_PROSPECTS — sans ça, le contour grossirait toujours dans la même proportion que le
 // carré et resterait aussi difficile à distinguer à fort zoom qu'à faible zoom.
 const PALIERS_CONTOUR_PROSPECTS = [
-  { id: "carre-prospects-fin",   epaisseur: 1.5 },  // zoom < 14
-  { id: "carre-prospects-moyen", epaisseur: 3.5 },  // 14 ≤ zoom < 18
-  { id: "carre-prospects-epais", epaisseur: 6 }      // zoom ≥ 18
+  { id: "carre-prospects-fin",   epaisseur: 2.5 },  // zoom < 14
+  { id: "carre-prospects-moyen", epaisseur: 4.5 },  // 14 ≤ zoom < 18
+  { id: "carre-prospects-epais", epaisseur: 7 }      // zoom ≥ 18
 ];
 const ICONE_PROSPECTS_SELON_ZOOM = ["step", ["zoom"],
   PALIERS_CONTOUR_PROSPECTS[0].id,
@@ -145,8 +145,8 @@ const RAYON_OP_SELECTION  = ["interpolate", ["linear"], ["zoom"], 10, 9, 14, 12,
 // Même famille de teintes (froides) pour PB_AT et PB_ST, afin qu'aucune des deux ne ressorte
 // plus que l'autre — contrairement à l'ancien violet/orange, trop contrastés entre eux.
 const SERIES_PB = [
-  { cle: "pb-at", table: "PB_AT", libelle: "PB_AT", legende: "PB_AT — avec travaux", couleur: "#7B52AB", classePopup: "popup-pb-at" }, // violet
-  { cle: "pb-st", table: "PB_ST", libelle: "PB_ST", legende: "PB_ST — sans travaux", couleur: "#B23A72", classePopup: "popup-pb-st" }  // magenta-rose
+  { cle: "pb-at", table: "PB_AT", libelle: "PB_AT", legende: "PB_AT — avec travaux (AT)", couleur: "#7B52AB", classePopup: "popup-pb-at" }, // violet
+  { cle: "pb-st", table: "PB_ST", libelle: "PB_ST", legende: "PB_ST — sans travaux (ST)", couleur: "#B23A72", classePopup: "popup-pb-st" }  // magenta-rose
 ];
 
 // --- Fond de carte : orthophotographie IGN Géoplateforme (WMTS), gratuite et sans clé ---
@@ -312,11 +312,11 @@ async function enregistrerImagesHachures() {
   }
 }
 
-// Carré creux (contour seul, intérieur transparent) pour l'icône des Prospects.
+// Carré à contour coloré et intérieur blanc à 50 % d'opacité pour l'icône des Prospects.
 function creerDataUriCarre(taille, epaisseur, couleur) {
   const demi = epaisseur / 2;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${taille}" height="${taille}">
-    <rect x="${demi}" y="${demi}" width="${taille - epaisseur}" height="${taille - epaisseur}" fill="none" stroke="${couleur}" stroke-width="${epaisseur}"/>
+    <rect x="${demi}" y="${demi}" width="${taille - epaisseur}" height="${taille - epaisseur}" fill="#FFFFFF" fill-opacity="0.5" stroke="${couleur}" stroke-width="${epaisseur}"/>
   </svg>`;
   return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
 }
@@ -491,6 +491,48 @@ function remplirListeCommunes(records) {
   select.innerHTML = `<option value="">Toutes les communes</option>`
     + tri.map(([cle, nom]) => `<option value="${echapperHtml(cle)}">${echapperHtml(nom)}</option>`).join("");
   select.value = communeFiltre || "";
+}
+
+// ---------- Contour blanc de la commune sélectionnée ----------
+// Contour officiel lu à la volée sur geo.api.gouv.fr (département 64 : Agglo de Pau), mis en cache.
+const DEPARTEMENT_COMMUNES = "64";
+const cacheContoursCommunes = {};   // clé normalisée → Feature GeoJSON (ou null si introuvable)
+async function chargerContourCommune(nom) {
+  const cle = cleCommune(nom);
+  if (cle in cacheContoursCommunes) return cacheContoursCommunes[cle];
+  let feature = null;
+  try {
+    const url = `https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(nom)}&codeDepartement=${DEPARTEMENT_COMMUNES}&fields=nom,contour&format=geojson&geometry=contour`;
+    const rep = await fetch(url);
+    const json = await rep.json();
+    const feats = json.features || [];
+    feature = feats.find(f => cleCommune(f.properties.nom) === cle) || null;
+  } catch (e) {
+    console.warn("Contour de commune : lecture impossible (non bloquant) :", e);
+  }
+  cacheContoursCommunes[cle] = feature;
+  return feature;
+}
+async function afficherContourCommune() {
+  const vide = { type: "FeatureCollection", features: [] };
+  const src = map.getSource("commune-contour");
+  if (!communeFiltre) { if (src) src.setData(vide); return; }
+  const select = document.getElementById("select-commune");
+  const nom = select && select.selectedOptions[0] ? select.selectedOptions[0].textContent : communeFiltre;
+  const cleDemandee = communeFiltre;
+  const feature = await chargerContourCommune(nom);
+  if (communeFiltre !== cleDemandee) return;   // la sélection a changé entre-temps
+  if (!map.getSource("commune-contour")) {
+    map.addSource("commune-contour", { type: "geojson", data: vide });
+    map.addLayer({
+      id: "commune-contour",
+      type: "line",
+      source: "commune-contour",
+      layout: { "line-join": "round" },
+      paint: { "line-color": "#FFFFFF", "line-width": 3, "line-opacity": 1 }
+    }, map.getLayer("prospects-cercles") ? "prospects-cercles" : undefined);
+  }
+  map.getSource("commune-contour").setData(feature ? { type: "FeatureCollection", features: [feature] } : vide);
 }
 
 function cadrerSurCommune() {
@@ -763,7 +805,7 @@ async function initCarte() {
         <label><input type="checkbox" id="toggle-foncier"> <span class="legende-swatch" style="background-color:rgba(46,204,64,0.15);background-image:url('${creerDataUriHachure(HACHURE_ENJEUX.tuile, HACHURE_ENJEUX.epaisseur, COULEUR_FONCIER)}');background-repeat:repeat;background-size:${HACHURE_ENJEUX.tuile}px ${HACHURE_ENJEUX.tuile}px;border-color:${COULEUR_FONCIER}"></span> Secteurs à enjeux</label>
         <label><input type="checkbox" id="toggle-foncier-moindre"> <span class="legende-swatch" style="background-color:rgba(201,242,155,0.25);background-image:url('${creerDataUriHachure(HACHURE_MOINDRE.tuile, HACHURE_MOINDRE.epaisseur, COULEUR_FONCIER_MOINDRE, true)}');background-repeat:repeat;background-size:${HACHURE_MOINDRE.tuile}px ${HACHURE_MOINDRE.tuile}px;border:1px dashed ${COULEUR_FONCIER_MOINDRE}"></span> Secteurs à moindre enjeu</label>
         <div id="foncier-note" style="margin-left:4px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
-        <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:rgba(0,0,0,0.35);border:2px solid ${COULEUR_PROSPECTS};width:9px;height:9px"></span> Prospects 2026</label>
+        <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:rgba(255,255,255,0.5);border:3px solid ${COULEUR_PROSPECTS};width:9px;height:9px"></span> Prospects 2026</label>
         ${SERIES_PB.map(serie => `<label><input type="checkbox" id="toggle-${serie.cle}" checked> <span class="legende-swatch" style="background:${serie.couleur};border-radius:50%;width:10px;height:10px"></span> ${serie.legende || serie.libelle}</label>`).join("")}
         <div class="groupe-titre">Opérations</div>
         <div class="legende-item">${pastilleOP("AGREE")}Agréée</div>
@@ -799,6 +841,7 @@ async function initCarte() {
     if (popupOuvert) { popupOuvert.remove(); popupOuvert = null; }
     appliquerFiltreCommune();
     cadrerSurCommune();
+    afficherContourCommune();
   });
 
   // Les deux familles de foncier se chargent ensemble (une seule lecture), mais s'affichent indépendamment.
