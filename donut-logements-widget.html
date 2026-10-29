@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Suivi des logements</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  html,body{margin:0;padding:0;background:#fff;font-family:'Inter','Helvetica Neue',Arial,sans-serif;}
+  #app{padding:8px 12px 12px;}
+  h1{margin:0 0 4px;font-size:16px;font-weight:650;color:#1F3864;}
+  #wrap{max-width:900px;margin:0 auto;}
+  svg{width:100%;height:auto;display:block;}
+  #empty{text-align:center;padding:48px 12px;color:#8497B0;font-size:13px;}
+  .hidden{display:none!important;}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1 id="titre" class="hidden"></h1>
+  <div id="wrap"><svg id="svg" viewBox="0 0 900 530" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div id="empty" class="hidden">Aucune donnée à afficher.</div>
+</div>
+<script>
+/* ============ Mapping des colonnes Grist ============ */
+const col=(name,title,type='Numeric')=>({name,title,type,optional:true});
+grist.ready({
+  columns:[
+    col('Libelle',          'Libellé (titre, optionnel)','Any'),
+    col('Normal',           'Cours normal [total, LLS, Acc.]','Any'),
+    col('Livres',           'Livrés [total, LLS, Acc.]','Any'),
+    col('LivresTF',         'Dont livrés grâce à la Task Force [total, LLS, Acc.]','Any'),
+    col('Debloques',        'Débloqués, plus de blocage [total, LLS, Acc.]','Any'),
+    col('DebloquesSusc',    "Débloqués et susceptibles d'être bloqués (hachure) [total, LLS, Acc.]",'Any'),
+    col('Susceptibles',     "Susceptibles d'être bloqués, non débloqués [total, LLS, Acc.]",'Any'),
+    col('BloquesFeuille',   'Bloqués hors recours (feuille de route) [total, LLS, Acc.]','Any'),
+    col('BloquesRecours',   'Bloqués par recours juridique [total, LLS, Acc.]','Any'),
+    col('Abandonnes',       'Abandonnés [total, LLS, Acc.]','Any'),
+    col('Arret',            "À l'arrêt [total, LLS, Acc.]",'Any'),
+    col('Total',            'Total affiché au centre (sinon : somme des parts)'),
+  ],
+  requiredAccess:'read table',
+});
+
+/* ============ Utilitaires ============ */
+const $=id=>document.getElementById(id);
+const n=v=>typeof v==='number'&&isFinite(v)?v:0;
+const fr=v=>v.toLocaleString('fr-FR');
+const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const f1=x=>x.toFixed(1);
+function wrap(text,max){
+  const out=[]; let cur='';
+  String(text).split(' ').forEach(w=>{
+    if(cur&&(cur+' '+w).length>max){out.push(cur);cur=w;} else cur=cur?cur+' '+w:w;
+  });
+  if(cur) out.push(cur);
+  return out;
+}
+
+/* ============ Géométrie ============ */
+const W=900,H=530,CX=450,CY=265,R1=170,R0=105;
+const START=-Math.PI/2, TAU=Math.PI*2;
+const pt=(r,a)=>[CX+r*Math.cos(a),CY+r*Math.sin(a)];
+function sector(r0,r1,a0,a1){
+  if(a1-a0>=TAU) a1=a0+TAU-0.0001;
+  const big=a1-a0>Math.PI?1:0;
+  const [x0,y0]=pt(r1,a0),[x1,y1]=pt(r1,a1),[x2,y2]=pt(r0,a1),[x3,y3]=pt(r0,a0);
+  return `M${f1(x0)} ${f1(y0)}A${r1} ${r1} 0 ${big} 1 ${f1(x1)} ${f1(y1)}L${f1(x2)} ${f1(y2)}A${r0} ${r0} 0 ${big} 0 ${f1(x3)} ${f1(y3)}Z`;
+}
+
+/* ============ Couleurs ============ */
+const C={
+  nombre:'#1F3864', nom:'#3F5273', sub:'#8497B0', ligne:'#9AA9BE', gold:'#C09A2E', tf:'#0B5D33',
+};
+
+/* ============ Rendu ============ */
+grist.onRecord(record=>{
+  const m=grist.mapColumnNames(record);
+  if(!m){ $('wrap').classList.add('hidden'); $('titre').classList.add('hidden'); $('empty').classList.remove('hidden'); return; }
+  render(m);
+});
+
+function render(m){
+  // Chaque colonne contient [total, LLS, Acc. sociale] ; un nombre seul est accepté
+  const P=k=>{
+    const x=m[k];
+    return Array.isArray(x)?{t:Math.max(0,n(x[0])),l:n(x[1]),a:n(x[2])}:{t:Math.max(0,n(x)),l:0,a:0};
+  };
+  const detail=p=>{
+    const d=[p.l>0?`${fr(p.l)} LLS`:'',p.a>0?`${fr(p.a)} Acc. Sociale`:''].filter(Boolean).join(' ; ');
+    return d?`dont ${d}`:'';
+  };
+  const livP=P('Livres'), livres=livP.t, tf=Math.min(P('LivresTF').t,livres);
+
+  const defs=[
+    {k:'Normal',        label:'Cours normal',                                         color:'#A8D5A2'},
+    {k:'Livres',        label:'Livrés',                                               color:'#1B7A4B', extra:tf>0?`dont ${fr(tf)} TaskForce`:''},
+    {k:'Debloques',     label:'Débloqués',    sub:'Task Force',                       color:'#27AE60'},
+    {k:'DebloquesSusc', label:'Débloqués et susceptibles d\'être bloqués',            color:'url(#hRec)'},
+    {k:'Susceptibles',  label:"Susceptibles d'être bloqués avec une feuille de route", color:'#FFE812'},
+    {k:'BloquesFeuille',label:'Bloqués avec une feuille de route',                    color:'#EF6C00'},
+    {k:'BloquesRecours',label:'Bloqués',      sub:'recours juridique',                color:'#FF0000'},
+    {k:'Abandonnes',    label:'Abandonnés',                                           color:'#C9D1D9'},
+    {k:'Arret',         label:"À l'arrêt",                                            color:'#000000'},
+  ];
+  const segs=defs.map(d=>{const p=P(d.k);return {...d,val:p.t,detail:detail(p)};});
+  const somme=segs.reduce((t,s)=>t+s.val,0);
+  const total=P('Total').t>0?P('Total').t:somme;
+  const empty=somme<=0;
+  $('wrap').classList.toggle('hidden',empty);
+  $('empty').classList.toggle('hidden',!empty);
+  const t=$('titre'); t.classList.toggle('hidden',!m.Libelle); t.textContent=m.Libelle||'';
+  if(empty) return;
+
+  // Angles (sens horaire depuis le haut)
+  let a=START;
+  segs.forEach(s=>{ s.a0=a; s.a1=a+s.val/somme*TAU; s.am=(s.a0+s.a1)/2; a=s.a1; });
+
+  let svg=`<defs>
+    <pattern id="hTF" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
+      <rect width="9" height="9" fill="#1B7A4B"/><rect width="3.5" height="9" fill="#2ECC71"/>
+    </pattern>
+    <pattern id="hRec" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
+      <rect width="9" height="9" fill="#27AE60"/><rect width="3.5" height="9" fill="#C0504D"/>
+    </pattern>
+  </defs>`;
+
+  // Parts
+  segs.forEach(s=>{ if(s.val>0) svg+=`<path d="${sector(R0,R1,s.a0,s.a1)}" fill="${s.color}" stroke="#fff" stroke-width="2"/>`; });
+
+  // Zone hachurée "livrés Task Force" (fin de la part Livrés, côté débloqués)
+  const L=segs[1];
+  if(tf>0){
+    const a0=L.a1-tf/somme*TAU;
+    svg+=`<path d="${sector(R0,R1,a0,L.a1)}" fill="url(#hTF)" stroke="#fff" stroke-width="2"/>`;
+  }
+
+  // Contour Task Force : livrés TF + débloqués + débloqués avec recours
+  const D=segs[2], DR=segs[3];
+  const tfStart=tf>0?L.a1-tf/somme*TAU:D.a0;
+  const tfEnd=DR.a1;
+  if(tfEnd-tfStart>0.001 && (tf>0||D.val>0||DR.val>0)){
+    const o=sector(R0-5,R1+5,tfStart,tfEnd);
+    svg+=`<path d="${o}" fill="none" stroke="${C.tf}" stroke-width="5" stroke-linejoin="round"/>`;
+  }
+
+  // Centre
+  svg+=`<text x="${CX}" y="${CY+4}" text-anchor="middle" font-size="46" font-weight="800" fill="${C.nombre}">${esc(fr(total))}</text>
+        <text x="${CX}" y="${CY+28}" text-anchor="middle" font-size="14" letter-spacing="3" fill="${C.sub}">LOGEMENTS</text>
+        <text x="${CX}" y="${CY+46}" text-anchor="middle" font-size="14" letter-spacing="3" fill="${C.sub}">SUIVIS</text>`;
+
+  // Étiquettes avec traits de repère
+  const items=segs.filter(s=>s.val>0).map(s=>{
+    s.right=Math.cos(s.am)>=0;
+    s.nameLines=wrap(s.label,28);
+    s.detailLines=s.detail?wrap(s.detail,30):[];
+    s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+(s.extra?1:0);
+    s.h=8+s.lines*17;
+    s.y=CY+Math.sin(s.am)*(R1+26);
+    return s;
+  });
+  [true,false].forEach(side=>{
+    const g=items.filter(s=>s.right===side).sort((p,q)=>p.y-q.y);
+    if(!g.length) return;
+    g[0].y=Math.max(g[0].y,g[0].h/2+4);
+    for(let i=1;i<g.length;i++) g[i].y=Math.max(g[i].y,g[i-1].y+(g[i-1].h+g[i].h)/2+6);
+    const last=g[g.length-1];
+    if(last.y+last.h/2>H-6){
+      last.y=H-6-last.h/2;
+      for(let i=g.length-2;i>=0;i--) g[i].y=Math.min(g[i].y,g[i+1].y-(g[i].h+g[i+1].h)/2-6);
+    }
+  });
+  items.forEach(s=>{
+    const dir=s.right?1:-1;
+    const [x0,y0]=pt(R1+2,s.am);
+    const ex=CX+dir*(R1+30), lx=CX+dir*(R1+44);
+    svg+=`<polyline points="${f1(x0)},${f1(y0)} ${f1(ex)},${f1(s.y)} ${f1(lx-dir*4)},${f1(s.y)}" fill="none" stroke="${C.ligne}" stroke-width="1"/>`;
+    const anchor=s.right?'start':'end';
+    let ty=s.y-s.h/2+19;
+    svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="21" font-weight="800" fill="${C.nombre}">${esc(fr(s.val))}</text>`;
+    s.nameLines.forEach(line=>{ ty+=17; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="14" font-weight="700" fill="${C.nom}">${esc(line)}</text>`; });
+    if(s.sub){ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="13" fill="${C.sub}">${esc(s.sub)}</text>`; }
+    s.detailLines.forEach(line=>{ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="12" fill="${C.sub}">${esc(line)}</text>`; });
+    if(s.extra){ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="13" font-weight="700" fill="${C.gold}">↳ ${esc(s.extra)}</text>`; }
+  });
+
+  $('svg').innerHTML=svg;
+}
+</script>
+</body>
+</html>
