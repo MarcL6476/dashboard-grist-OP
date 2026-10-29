@@ -58,7 +58,8 @@ function wrap(text,max){
 }
 
 /* ============ Géométrie ============ */
-const W=900,H=530,CX=450,CY=265,R1=170,R0=105;
+const W=900,CX=450,R1=170,R0=105;
+let H=530,CY=265;   // H et CY s'adaptent au nombre d'étiquettes
 const START=-Math.PI/2, TAU=Math.PI*2;
 const pt=(r,a)=>[CX+r*Math.cos(a),CY+r*Math.sin(a)];
 function sector(r0,r1,a0,a1){
@@ -116,6 +117,23 @@ function render(m){
   let a=START;
   segs.forEach(s=>{ s.a0=a; s.a1=a+s.val/somme*TAU; s.am=(s.a0+s.a1)/2; a=s.a1; });
 
+  // Hauteur des étiquettes, puis hauteur du dessin : le côté le plus chargé décide
+  const visibles=segs.filter(s=>s.val>0);
+  visibles.forEach(s=>{
+    s.right=Math.cos(s.am)>=0;
+    s.nameLines=wrap(s.label,28);
+    s.detailLines=s.detail?wrap(s.detail,34):[];
+    s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+(s.extra?1:0);
+    s.h=8+s.lines*17;
+  });
+  const besoin=side=>{
+    const g=visibles.filter(s=>s.right===side);
+    return g.reduce((t,s)=>t+s.h,0)+Math.max(0,g.length-1)*6+16;
+  };
+  H=Math.max(530,besoin(true),besoin(false));
+  CY=H/2;
+  $('svg').setAttribute('viewBox',`0 0 ${W} ${H}`);
+
   let svg=`<defs>
     <pattern id="hTF" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
       <rect width="9" height="9" fill="#1B7A4B"/><rect width="3.5" height="9" fill="#2ECC71"/>
@@ -151,11 +169,6 @@ function render(m){
 
   // Étiquettes avec traits de repère
   const items=segs.filter(s=>s.val>0).map(s=>{
-    s.right=Math.cos(s.am)>=0;
-    s.nameLines=wrap(s.label,28);
-    s.detailLines=s.detail?wrap(s.detail,30):[];
-    s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+(s.extra?1:0);
-    s.h=8+s.lines*17;
     s.y=CY+Math.sin(s.am)*(R1+26);
     return s;
   });
