@@ -106,6 +106,14 @@ function render(m){
     {k:'Arret',         label:"À l'arrêt",                                            color:'#000000'},
   ];
   const segs=defs.map(d=>{const p=P(d.k);return {...d,val:p.t,detail:detail(p)};});
+  // Débloqués : total = débloqués + hachure (susceptibles d'être rebloqués) + livrés Task Force
+  const pD=P('Debloques'), pS=P('DebloquesSusc'), pT=P('LivresTF');
+  const segD=segs[2];
+  segD.labelVal=pD.t+pS.t+tf;
+  segD.detail=detail({l:pD.l+pS.l+pT.l,a:pD.a+pS.a+pT.a});
+  segD.dont=[pS.t>0?`dont ${fr(pS.t)} susceptibles d'être rebloqués`:'',tf>0?`dont ${fr(tf)} déjà livrés`:''].filter(Boolean);
+  segs[3].noLabel=true;
+  const aEtiquette=s=>!s.noLabel&&(s.labelVal??s.val)>0;
   const somme=segs.reduce((t,s)=>t+s.val,0);
   const total=P('Total').t>0?P('Total').t:somme;
   const empty=somme<=0;
@@ -118,14 +126,21 @@ function render(m){
   let a=START;
   segs.forEach(s=>{ s.a0=a; s.a1=a+s.val/somme*TAU; s.am=(s.a0+s.a1)/2; a=s.a1; });
 
+  {
+    const L_=segs[1], D_=segs[2], DR_=segs[3];
+    const t0=tf>0?L_.a1-tf/somme*TAU:D_.a0;
+    if(DR_.a1>t0) D_.am=(t0+DR_.a1)/2;
+  }
+
   // Hauteur des étiquettes, puis hauteur du dessin : le côté le plus chargé décide
-  const visibles=segs.filter(s=>s.val>0);
+  const visibles=segs.filter(aEtiquette);
   visibles.forEach(s=>{
     s.top=((s.am-START)%TAU+TAU)%TAU>=TOP_FROM;
     s.right=s.top||Math.cos(s.am)>=0;
     s.nameLines=wrap(s.label,28);
     s.detailLines=s.detail?wrap(s.detail,34):[];
-    s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+(s.extra?1:0);
+    s.dontLines=(s.dont||[]).flatMap(t=>wrap(t,34));
+    s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+s.dontLines.length+(s.extra?1:0);
     s.h=8+s.lines*17;
   });
   const pile=g=>g.reduce((t,s)=>t+s.h,0)+Math.max(0,g.length-1)*6+16;
@@ -169,7 +184,7 @@ function render(m){
         <text x="${CX}" y="${CY+46}" text-anchor="middle" font-size="14" letter-spacing="3" fill="${C.sub}">SUIVIS</text>`;
 
   // Étiquettes avec traits de repère
-  const items=segs.filter(s=>s.val>0).map(s=>{
+  const items=segs.filter(aEtiquette).map(s=>{
     s.y=CY+Math.sin(s.am)*(R1+26);
     return s;
   });
@@ -197,10 +212,11 @@ function render(m){
     svg+=`<polyline points="${pts}" fill="none" stroke="${C.ligne}" stroke-width="1"/>`;
     const anchor=s.right?'start':'end';
     let ty=s.y-s.h/2+19;
-    svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="21" font-weight="800" fill="${C.nombre}">${esc(fr(s.val))}</text>`;
+    svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="21" font-weight="800" fill="${C.nombre}">${esc(fr(s.labelVal??s.val))}</text>`;
     s.nameLines.forEach(line=>{ ty+=17; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="14" font-weight="700" fill="${C.nom}">${esc(line)}</text>`; });
     if(s.sub){ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="13" fill="${C.sub}">${esc(s.sub)}</text>`; }
     s.detailLines.forEach(line=>{ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="12" fill="${C.sub}">${esc(line)}</text>`; });
+    s.dontLines.forEach(line=>{ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="12" font-weight="600" fill="${C.nom}">${esc(line)}</text>`; });
     if(s.extra){ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="13" font-weight="700" fill="${C.gold}">↳ ${esc(s.extra)}</text>`; }
   });
 
