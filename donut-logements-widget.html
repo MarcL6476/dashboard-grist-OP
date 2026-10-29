@@ -61,6 +61,7 @@ function wrap(text,max){
 const W=900,CX=450,R1=170,R0=105;
 let H=530,CY=265;   // H et CY s'adaptent au nombre d'étiquettes
 const START=-Math.PI/2, TAU=Math.PI*2;
+const TOP_FROM=TAU*320/360;   // parts dont le milieu est à plus de 320° (sens horaire) : étiquettes en haut
 const pt=(r,a)=>[CX+r*Math.cos(a),CY+r*Math.sin(a)];
 function sector(r0,r1,a0,a1){
   if(a1-a0>=TAU) a1=a0+TAU-0.0001;
@@ -120,18 +121,18 @@ function render(m){
   // Hauteur des étiquettes, puis hauteur du dessin : le côté le plus chargé décide
   const visibles=segs.filter(s=>s.val>0);
   visibles.forEach(s=>{
-    s.right=Math.cos(s.am)>=0;
+    s.top=((s.am-START)%TAU+TAU)%TAU>=TOP_FROM;
+    s.right=s.top||Math.cos(s.am)>=0;
     s.nameLines=wrap(s.label,28);
     s.detailLines=s.detail?wrap(s.detail,34):[];
     s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+(s.extra?1:0);
     s.h=8+s.lines*17;
   });
-  const besoin=side=>{
-    const g=visibles.filter(s=>s.right===side);
-    return g.reduce((t,s)=>t+s.h,0)+Math.max(0,g.length-1)*6+16;
-  };
-  H=Math.max(530,besoin(true),besoin(false));
-  CY=H/2;
+  const pile=g=>g.reduce((t,s)=>t+s.h,0)+Math.max(0,g.length-1)*6+16;
+  const hautG=visibles.filter(s=>s.top);
+  CY=Math.max(265,hautG.length?R1+8+pile(hautG):0);
+  H=Math.max(CY*2<=530?530:CY+R1+24,CY+R1+24,
+             pile(visibles.filter(s=>s.right&&!s.top)),pile(visibles.filter(s=>!s.right)));
   $('svg').setAttribute('viewBox',`0 0 ${W} ${H}`);
 
   let svg=`<defs>
@@ -173,7 +174,7 @@ function render(m){
     return s;
   });
   [true,false].forEach(side=>{
-    const g=items.filter(s=>s.right===side).sort((p,q)=>p.y-q.y);
+    const g=items.filter(s=>s.right===side&&!s.top).sort((p,q)=>p.y-q.y);
     if(!g.length) return;
     g[0].y=Math.max(g[0].y,g[0].h/2+4);
     for(let i=1;i<g.length;i++) g[i].y=Math.max(g[i].y,g[i-1].y+(g[i-1].h+g[i].h)/2+6);
@@ -183,11 +184,17 @@ function render(m){
       for(let i=g.length-2;i>=0;i--) g[i].y=Math.min(g[i].y,g[i+1].y-(g[i].h+g[i+1].h)/2-6);
     }
   });
+  // Groupe du haut : empilé au-dessus du donut, la part la plus à gauche en haut (pas de croisement)
+  let yb=CY-R1-10;
+  items.filter(s=>s.top).sort((p,q)=>q.am-p.am).forEach(s=>{ s.y=yb-s.h/2; yb-=s.h+6; });
+
   items.forEach(s=>{
     const dir=s.right?1:-1;
     const [x0,y0]=pt(R1+2,s.am);
     const ex=CX+dir*(R1+30), lx=CX+dir*(R1+44);
-    svg+=`<polyline points="${f1(x0)},${f1(y0)} ${f1(ex)},${f1(s.y)} ${f1(lx-dir*4)},${f1(s.y)}" fill="none" stroke="${C.ligne}" stroke-width="1"/>`;
+    const pts=s.top?`${f1(x0)},${f1(y0)} ${f1(x0)},${f1(s.y)} ${f1(lx-4)},${f1(s.y)}`
+                   :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(s.y)} ${f1(lx-dir*4)},${f1(s.y)}`;
+    svg+=`<polyline points="${pts}" fill="none" stroke="${C.ligne}" stroke-width="1"/>`;
     const anchor=s.right?'start':'end';
     let ty=s.y-s.h/2+19;
     svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="21" font-weight="800" fill="${C.nombre}">${esc(fr(s.val))}</text>`;
