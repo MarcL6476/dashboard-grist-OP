@@ -34,6 +34,7 @@ grist.ready({
     col('DebloquesSusc',    "Débloqués et susceptibles d'être bloqués (hachure) [total, LLS, Acc.]",'Any'),
     col('Susceptibles',     "Susceptibles d'être bloqués, non débloqués [total, LLS, Acc.]",'Any'),
     col('BloquesFeuille',   'Bloqués hors recours (feuille de route) [total, LLS, Acc.]','Any'),
+    col('BloquesDouble',    'Bloqués par recours ET feuille de route (cumul, hachure) [total, LLS, Acc.]','Any'),
     col('BloquesRecours',   'Bloqués par recours juridique [total, LLS, Acc.]','Any'),
     col('Abandonnes',       'Abandonnés [total, LLS, Acc.]','Any'),
     col('Arret',            "À l'arrêt [total, LLS, Acc.]",'Any'),
@@ -101,6 +102,7 @@ function render(m){
     {k:'DebloquesSusc', label:'Débloqués et susceptibles d\'être bloqués',            color:'url(#hRec)'},
     {k:'Susceptibles',  label:"Susceptibles d'être bloqués avec une feuille de route", color:'#FFE812'},
     {k:'BloquesFeuille',label:'Bloqués avec une feuille de route',                    color:'#EF6C00'},
+    {k:'BloquesDouble', label:'Bloqués avec une feuille de route et par recours',    color:'url(#hDbl)'},
     {k:'BloquesRecours',label:'Bloqués',      sub:'recours juridique',                color:'#FF0000'},
     {k:'Abandonnes',    label:'Abandonnés',                                           color:'#C9D1D9'},
     {k:'Arret',         label:"À l'arrêt",                                            color:'#000000'},
@@ -156,6 +158,9 @@ function render(m){
     </pattern>
     <pattern id="hRec" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
       <rect width="9" height="9" fill="#27AE60"/><rect width="3.5" height="9" fill="#C0504D"/>
+    </pattern>
+    <pattern id="hDbl" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
+      <rect width="9" height="9" fill="#FF0000"/><rect width="3.5" height="9" fill="#EF6C00"/>
     </pattern>
   </defs>`;
 
