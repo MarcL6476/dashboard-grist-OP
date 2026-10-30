@@ -9,6 +9,7 @@
   html,body{margin:0;padding:0;background:#fff;font-family:'Inter','Helvetica Neue',Arial,sans-serif;}
   #app{padding:8px 12px 12px;}
   h1{margin:0 0 4px;font-size:16px;font-weight:650;color:#1F3864;}
+  #ecart{margin:0 0 6px;font-size:12px;color:#B45309;}
   #wrap{max-width:900px;margin:0 auto;}
   svg{width:100%;height:auto;display:block;}
   #empty{text-align:center;padding:48px 12px;color:#8497B0;font-size:13px;}
@@ -18,37 +19,42 @@
 <body>
 <div id="app">
   <h1 id="titre" class="hidden"></h1>
+  <div id="ecart" class="hidden"></div>
   <div id="wrap"><svg id="svg" viewBox="0 0 900 530" xmlns="http://www.w3.org/2000/svg"></svg></div>
   <div id="empty" class="hidden">Aucune donnée à afficher.</div>
 </div>
 <script>
 /* ============ Mapping des colonnes Grist ============ */
-const col=(name,title,type='Numeric')=>({name,title,type,optional:true});
+const col=(name,title)=>({name,title,type:'Any',optional:true});
 grist.ready({
   columns:[
-    col('Libelle',          'Libellé (titre, optionnel)','Any'),
-    col('Normal',           'Cours normal [total, LLS, Acc.]','Any'),
-    col('Livres',           'Livrés [total, LLS, Acc.]','Any'),
-    col('LivresTF',         'Dont livrés grâce à la Task Force [total, LLS, Acc.]','Any'),
-    col('Debloques',        'Débloqués, plus de blocage [total, LLS, Acc.]','Any'),
-    col('DebloquesSusc',    "Débloqués et susceptibles d'être bloqués (hachure) [total, LLS, Acc.]",'Any'),
-    col('Susceptibles',     "Susceptibles d'être bloqués, non débloqués [total, LLS, Acc.]",'Any'),
-    col('BloquesFeuille',   'Bloqués hors recours (feuille de route) [total, LLS, Acc.]','Any'),
-    col('BloquesDouble',    'Bloqués par recours ET feuille de route (cumul, hachure) [total, LLS, Acc.]','Any'),
-    col('BloquesRecours',   'Bloqués par recours juridique [total, LLS, Acc.]','Any'),
-    col('Abandonnes',       'Abandonnés [total, LLS, Acc.]','Any'),
-    col('Arret',            "À l'arrêt [total, LLS, Acc.]",'Any'),
-    col('Total',            'Total affiché au centre (sinon : somme des parts)'),
+    col('Libelle',       'Libellé (titre, optionnel)'),
+    col('Normal',        'Cours normal [total, LLS, Acc.]'),
+    col('Livres',        'Livrés [total, LLS, Acc.]'),
+    col('LivresTF',      'Dont livrés grâce à la Task Force [total, LLS, Acc.]'),
+    col('Debloques',     'Débloqués, plus de blocage [total, LLS, Acc.]'),
+    col('DebloquesSusc', "Débloqués et susceptibles d'être bloqués (hachure) [total, LLS, Acc.]"),
+    col('Susceptibles',  "Susceptibles d'être bloqués, non débloqués [total, LLS, Acc.]"),
+    col('BloquesFeuille','Bloqués hors recours (feuille de route) [total, LLS, Acc.]'),
+    col('BloquesDouble', 'Bloqués par recours ET feuille de route (cumul, hachure) [total, LLS, Acc.]'),
+    col('BloquesRecours','Bloqués par recours juridique [total, LLS, Acc.]'),
+    col('Abandonnes',    'Abandonnés [total, LLS, Acc.]'),
+    col('Arret',         "À l'arrêt [total, LLS, Acc.]"),
+    {name:'Total',title:'Total affiché au centre (sinon : somme des parts)',type:'Numeric',optional:true},
   ],
   requiredAccess:'read table',
 });
 
 /* ============ Utilitaires ============ */
 const $=id=>document.getElementById(id);
-const n=v=>typeof v==='number'&&isFinite(v)?v:0;
 const fr=v=>v.toLocaleString('fr-FR');
-const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const f1=x=>x.toFixed(1);
+const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Nombre fini, ou 0. Accepte aussi "12" et "1 234,5".
+const n=v=>{
+  const x=typeof v==='string'?parseFloat(v.replace(/\s/g,'').replace(',','.')):v;
+  return Number.isFinite(x)?x:0;
+};
 function wrap(text,max){
   const out=[]; let cur='';
   String(text).split(' ').forEach(w=>{
@@ -57,173 +63,213 @@ function wrap(text,max){
   if(cur) out.push(cur);
   return out;
 }
+const T=(x,y,anchor,size,weight,fill,s)=>
+  `<text x="${f1(x)}" y="${f1(y)}" text-anchor="${anchor}" font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(s)}</text>`;
+
+/* ============ Constantes ============ */
+const W=900, CX=450, R1=170, R0=105, GAP=6;
+const START=-Math.PI/2, TAU=Math.PI*2;
+const TOP_FROM=TAU*320/360;   // parts dont le milieu dépasse 320° (sens horaire) : étiquettes en haut
+const C={nombre:'#1F3864',nom:'#3F5273',sub:'#8497B0',ligne:'#9AA9BE',gold:'#C09A2E',tf:'#0B5D33'};
+
+const DEFS=[
+  {k:'Normal',        label:'Cours normal',                                         color:'#A8D5A2'},
+  {k:'Livres',        label:'Livrés',                                               color:'#1B7A4B'},
+  {k:'Debloques',     label:'Débloqués', sub:'Task Force',                           color:'#27AE60'},
+  {k:'DebloquesSusc', label:"Débloqués et susceptibles d'être bloqués",             color:'url(#hRec)', noLabel:true},
+  {k:'Susceptibles',  label:"Susceptibles d'être bloqués avec une feuille de route", color:'#FFE812'},
+  {k:'BloquesFeuille',label:'Bloqués avec une feuille de route',                    color:'#EF6C00'},
+  {k:'BloquesDouble', label:'Bloqués avec une feuille de route et par recours',     color:'url(#hDbl)'},
+  {k:'BloquesRecours',label:'Bloqués', sub:'recours juridique',                      color:'#FF0000'},
+  {k:'Abandonnes',    label:'Abandonnés',                                           color:'#C9D1D9'},
+  {k:'Arret',         label:"À l'arrêt",                                            color:'#000000'},
+];
+
+const hatch=(id,bg,stripe)=>
+  `<pattern id="${id}" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
+     <rect width="9" height="9" fill="${bg}"/><rect width="3.5" height="9" fill="${stripe}"/></pattern>`;
+const SVG_DEFS=`<defs>${hatch('hTF','#1B7A4B','#2ECC71')}${hatch('hRec','#27AE60','#C0504D')}${hatch('hDbl','#FF0000','#EF6C00')}</defs>`;
 
 /* ============ Géométrie ============ */
-const W=900,CX=450,R1=170,R0=105;
-let H=530,CY=265;   // H et CY s'adaptent au nombre d'étiquettes
-const START=-Math.PI/2, TAU=Math.PI*2;
-const TOP_FROM=TAU*320/360;   // parts dont le milieu est à plus de 320° (sens horaire) : étiquettes en haut
-const pt=(r,a)=>[CX+r*Math.cos(a),CY+r*Math.sin(a)];
-function sector(r0,r1,a0,a1){
-  if(a1-a0>=TAU) a1=a0+TAU-0.0001;
-  const big=a1-a0>Math.PI?1:0;
-  const [x0,y0]=pt(r1,a0),[x1,y1]=pt(r1,a1),[x2,y2]=pt(r0,a1),[x3,y3]=pt(r0,a0);
-  return `M${f1(x0)} ${f1(y0)}A${r1} ${r1} 0 ${big} 1 ${f1(x1)} ${f1(y1)}L${f1(x2)} ${f1(y2)}A${r0} ${r0} 0 ${big} 0 ${f1(x3)} ${f1(y3)}Z`;
+const geometry=cy=>{
+  const pt=(r,a)=>[CX+r*Math.cos(a),cy+r*Math.sin(a)];
+  const sector=(r0,r1,a0,a1)=>{
+    if(a1-a0>=TAU) a1=a0+TAU-0.0001;
+    const big=a1-a0>Math.PI?1:0;
+    const [x0,y0]=pt(r1,a0),[x1,y1]=pt(r1,a1),[x2,y2]=pt(r0,a1),[x3,y3]=pt(r0,a0);
+    return `M${f1(x0)} ${f1(y0)}A${r1} ${r1} 0 ${big} 1 ${f1(x1)} ${f1(y1)}L${f1(x2)} ${f1(y2)}A${r0} ${r0} 0 ${big} 0 ${f1(x3)} ${f1(y3)}Z`;
+  };
+  return {pt,sector};
+};
+
+/* ============ Données ============ */
+// Chaque colonne contient [total, LLS, Acc. sociale] ; un nombre seul est accepté
+const readPart=x=>Array.isArray(x)
+  ? {t:Math.max(0,n(x[0])),l:n(x[1]),a:n(x[2])}
+  : {t:Math.max(0,n(x)),l:0,a:0};
+
+const detailText=p=>{
+  const d=[p.l>0?`${fr(p.l)} LLS`:'',p.a>0?`${fr(p.a)} Acc. Sociale`:''].filter(Boolean).join(' ; ');
+  return d?`dont ${d}`:'';
+};
+
+function buildSegments(m){
+  const P=k=>readPart(m[k]);
+  const livres=P('Livres').t;
+  const tf=Math.min(P('LivresTF').t,livres);
+
+  const segs=DEFS.map(d=>{
+    const p=P(d.k);
+    return {...d,val:p.t,detail:detailText(p)};
+  });
+  const seg=k=>segs.find(s=>s.k===k);
+
+  if(tf>0) seg('Livres').extra=`dont ${fr(tf)} TaskForce`;
+
+  // Débloqués : total affiché = débloqués + hachure (susceptibles d'être rebloqués) + livrés Task Force
+  const pD=P('Debloques'), pS=P('DebloquesSusc'), pT=P('LivresTF');
+  const sD=seg('Debloques');
+  sD.labelVal=pD.t+pS.t+tf;
+  sD.detail=detailText({l:pD.l+pS.l+pT.l,a:pD.a+pS.a+pT.a});
+  sD.dont=[
+    pS.t>0?`dont ${fr(pS.t)} susceptibles d'être rebloqués`:'',
+    tf>0?`dont ${fr(tf)} déjà livrés`:'',
+  ].filter(Boolean);
+
+  const somme=segs.reduce((t,s)=>t+s.val,0);
+  return {segs,seg,tf,somme,totalSaisi:P('Total').t};
 }
 
-/* ============ Couleurs ============ */
-const C={
-  nombre:'#1F3864', nom:'#3F5273', sub:'#8497B0', ligne:'#9AA9BE', gold:'#C09A2E', tf:'#0B5D33',
-};
+/* ============ Mise en page des étiquettes ============ */
+const hasLabel=s=>!s.noLabel&&(s.labelVal??s.val)>0;
+
+function measureLabel(s){
+  s.top=((s.am-START)%TAU+TAU)%TAU>=TOP_FROM;
+  s.right=s.top||Math.cos(s.am)>=0;
+  s.nameLines=wrap(s.label,28);
+  s.detailLines=s.detail?wrap(s.detail,34):[];
+  s.dontLines=(s.dont||[]).flatMap(t=>wrap(t,34));
+  s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+s.dontLines.length+(s.extra?1:0);
+  s.h=8+s.lines*17;
+}
+const pile=g=>g.reduce((t,s)=>t+s.h,0)+Math.max(0,g.length-1)*GAP+16;
+
+// Place les étiquettes latérales sans chevauchement (côté droit puis gauche)
+function placeSides(items,cy,H){
+  [true,false].forEach(side=>{
+    const g=items.filter(s=>s.right===side&&!s.top).sort((p,q)=>p.y-q.y);
+    if(!g.length) return;
+    g[0].y=Math.max(g[0].y,g[0].h/2+4);
+    for(let i=1;i<g.length;i++) g[i].y=Math.max(g[i].y,g[i-1].y+(g[i-1].h+g[i].h)/2+GAP);
+    const last=g[g.length-1];
+    if(last.y+last.h/2>H-6){
+      last.y=H-6-last.h/2;
+      for(let i=g.length-2;i>=0;i--) g[i].y=Math.min(g[i].y,g[i+1].y-(g[i].h+g[i+1].h)/2-GAP);
+    }
+  });
+}
+
+// Groupe du haut : empilé au-dessus du donut, la part la plus à gauche en haut (pas de croisement)
+function placeTop(items,cy){
+  let yb=cy-R1-10;
+  items.filter(s=>s.top).sort((p,q)=>q.am-p.am).forEach(s=>{ s.y=yb-s.h/2; yb-=s.h+GAP; });
+}
+
+function drawLabel(s,pt){
+  const dir=s.right?1:-1;
+  const [x0,y0]=pt(R1+2,s.am);
+  const ex=CX+dir*(R1+30), lx=CX+dir*(R1+44);
+  const pts=s.top
+    ? `${f1(x0)},${f1(y0)} ${f1(x0)},${f1(s.y)} ${f1(lx-4)},${f1(s.y)}`
+    : `${f1(x0)},${f1(y0)} ${f1(ex)},${f1(s.y)} ${f1(lx-dir*4)},${f1(s.y)}`;
+  const anchor=s.right?'start':'end';
+  let ty=s.y-s.h/2+19;
+  let out=`<polyline points="${pts}" fill="none" stroke="${C.ligne}" stroke-width="1"/>`;
+  out+=T(lx,ty,anchor,21,800,C.nombre,fr(s.labelVal??s.val));
+  s.nameLines.forEach(l=>{ ty+=17; out+=T(lx,ty,anchor,14,700,C.nom,l); });
+  if(s.sub) { ty+=16; out+=T(lx,ty,anchor,13,400,C.sub,s.sub); }
+  s.detailLines.forEach(l=>{ ty+=16; out+=T(lx,ty,anchor,12,400,C.sub,l); });
+  s.dontLines.forEach(l=>{ ty+=16; out+=T(lx,ty,anchor,12,600,C.nom,l); });
+  if(s.extra) { ty+=16; out+=T(lx,ty,anchor,13,700,C.gold,'↳ '+s.extra); }
+  return out;
+}
 
 /* ============ Rendu ============ */
 grist.onRecord(record=>{
   const m=grist.mapColumnNames(record);
-  if(!m){ $('wrap').classList.add('hidden'); $('titre').classList.add('hidden'); $('empty').classList.remove('hidden'); return; }
+  if(!m){
+    ['wrap','titre','ecart'].forEach(id=>$(id).classList.add('hidden'));
+    $('empty').classList.remove('hidden');
+    return;
+  }
   render(m);
 });
 
 function render(m){
-  // Chaque colonne contient [total, LLS, Acc. sociale] ; un nombre seul est accepté
-  const P=k=>{
-    const x=m[k];
-    return Array.isArray(x)?{t:Math.max(0,n(x[0])),l:n(x[1]),a:n(x[2])}:{t:Math.max(0,n(x)),l:0,a:0};
-  };
-  const detail=p=>{
-    const d=[p.l>0?`${fr(p.l)} LLS`:'',p.a>0?`${fr(p.a)} Acc. Sociale`:''].filter(Boolean).join(' ; ');
-    return d?`dont ${d}`:'';
-  };
-  const livP=P('Livres'), livres=livP.t, tf=Math.min(P('LivresTF').t,livres);
-
-  const defs=[
-    {k:'Normal',        label:'Cours normal',                                         color:'#A8D5A2'},
-    {k:'Livres',        label:'Livrés',                                               color:'#1B7A4B', extra:tf>0?`dont ${fr(tf)} TaskForce`:''},
-    {k:'Debloques',     label:'Débloqués',    sub:'Task Force',                       color:'#27AE60'},
-    {k:'DebloquesSusc', label:'Débloqués et susceptibles d\'être bloqués',            color:'url(#hRec)'},
-    {k:'Susceptibles',  label:"Susceptibles d'être bloqués avec une feuille de route", color:'#FFE812'},
-    {k:'BloquesFeuille',label:'Bloqués avec une feuille de route',                    color:'#EF6C00'},
-    {k:'BloquesDouble', label:'Bloqués avec une feuille de route et par recours',    color:'url(#hDbl)'},
-    {k:'BloquesRecours',label:'Bloqués',      sub:'recours juridique',                color:'#FF0000'},
-    {k:'Abandonnes',    label:'Abandonnés',                                           color:'#C9D1D9'},
-    {k:'Arret',         label:"À l'arrêt",                                            color:'#000000'},
-  ];
-  const segs=defs.map(d=>{const p=P(d.k);return {...d,val:p.t,detail:detail(p)};});
-  // Débloqués : total = débloqués + hachure (susceptibles d'être rebloqués) + livrés Task Force
-  const pD=P('Debloques'), pS=P('DebloquesSusc'), pT=P('LivresTF');
-  const segD=segs[2];
-  segD.labelVal=pD.t+pS.t+tf;
-  segD.detail=detail({l:pD.l+pS.l+pT.l,a:pD.a+pS.a+pT.a});
-  segD.dont=[pS.t>0?`dont ${fr(pS.t)} susceptibles d'être rebloqués`:'',tf>0?`dont ${fr(tf)} déjà livrés`:''].filter(Boolean);
-  segs[3].noLabel=true;
-  const aEtiquette=s=>!s.noLabel&&(s.labelVal??s.val)>0;
-  const somme=segs.reduce((t,s)=>t+s.val,0);
-  const total=P('Total').t>0?P('Total').t:somme;
+  const {segs,seg,tf,somme,totalSaisi}=buildSegments(m);
+  const total=totalSaisi>0?totalSaisi:somme;
   const empty=somme<=0;
+
   $('wrap').classList.toggle('hidden',empty);
   $('empty').classList.toggle('hidden',!empty);
-  const t=$('titre'); t.classList.toggle('hidden',!m.Libelle); t.textContent=m.Libelle||'';
+  const titre=$('titre');
+  titre.classList.toggle('hidden',!m.Libelle);
+  titre.textContent=m.Libelle||'';
+
+  // Contrôle : total saisi ≠ somme des parts
+  const ecart=$('ecart');
+  const diff=totalSaisi>0?totalSaisi-somme:0;
+  ecart.classList.toggle('hidden',empty||diff===0);
+  if(diff!==0) ecart.textContent=`⚠ Total saisi (${fr(totalSaisi)}) ≠ somme des parts (${fr(somme)}) : écart de ${fr(diff)}`;
   if(empty) return;
 
   // Angles (sens horaire depuis le haut)
   let a=START;
   segs.forEach(s=>{ s.a0=a; s.a1=a+s.val/somme*TAU; s.am=(s.a0+s.a1)/2; a=s.a1; });
 
-  {
-    const L_=segs[1], D_=segs[2], DR_=segs[3];
-    const t0=tf>0?L_.a1-tf/somme*TAU:D_.a0;
-    if(DR_.a1>t0) D_.am=(t0+DR_.a1)/2;
-  }
-
-  // Hauteur des étiquettes, puis hauteur du dessin : le côté le plus chargé décide
-  const visibles=segs.filter(aEtiquette);
-  visibles.forEach(s=>{
-    s.top=((s.am-START)%TAU+TAU)%TAU>=TOP_FROM;
-    s.right=s.top||Math.cos(s.am)>=0;
-    s.nameLines=wrap(s.label,28);
-    s.detailLines=s.detail?wrap(s.detail,34):[];
-    s.dontLines=(s.dont||[]).flatMap(t=>wrap(t,34));
-    s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+s.dontLines.length+(s.extra?1:0);
-    s.h=8+s.lines*17;
-  });
-  const pile=g=>g.reduce((t,s)=>t+s.h,0)+Math.max(0,g.length-1)*6+16;
-  const hautG=visibles.filter(s=>s.top);
-  CY=Math.max(265,hautG.length?R1+8+pile(hautG):0);
-  H=Math.max(CY*2<=530?530:CY+R1+24,CY+R1+24,
-             pile(visibles.filter(s=>s.right&&!s.top)),pile(visibles.filter(s=>!s.right)));
-  $('svg').setAttribute('viewBox',`0 0 ${W} ${H}`);
-
-  let svg=`<defs>
-    <pattern id="hTF" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
-      <rect width="9" height="9" fill="#1B7A4B"/><rect width="3.5" height="9" fill="#2ECC71"/>
-    </pattern>
-    <pattern id="hRec" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
-      <rect width="9" height="9" fill="#27AE60"/><rect width="3.5" height="9" fill="#C0504D"/>
-    </pattern>
-    <pattern id="hDbl" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
-      <rect width="9" height="9" fill="#FF0000"/><rect width="3.5" height="9" fill="#EF6C00"/>
-    </pattern>
-  </defs>`;
-
-  // Parts
-  segs.forEach(s=>{ if(s.val>0) svg+=`<path d="${sector(R0,R1,s.a0,s.a1)}" fill="${s.color}" stroke="#fff" stroke-width="2"/>`; });
-
-  // Zone hachurée "livrés Task Force" (fin de la part Livrés, côté débloqués)
-  const L=segs[1];
-  if(tf>0){
-    const a0=L.a1-tf/somme*TAU;
-    svg+=`<path d="${sector(R0,R1,a0,L.a1)}" fill="url(#hTF)" stroke="#fff" stroke-width="2"/>`;
-  }
-
-  // Contour Task Force : livrés TF + débloqués + débloqués avec recours
-  const D=segs[2], DR=segs[3];
+  const L=seg('Livres'), D=seg('Debloques'), DR=seg('DebloquesSusc');
   const tfStart=tf>0?L.a1-tf/somme*TAU:D.a0;
   const tfEnd=DR.a1;
-  if(tfEnd-tfStart>0.001 && (tf>0||D.val>0||DR.val>0)){
-    const o=sector(R0-5,R1+5,tfStart,tfEnd);
-    svg+=`<path d="${o}" fill="none" stroke="${C.tf}" stroke-width="5" stroke-linejoin="round"/>`;
-  }
+  if(tfEnd>tfStart) D.am=(tfStart+tfEnd)/2;   // étiquette Débloqués centrée sur tout le bloc Task Force
+
+  // Dimensions : le côté le plus chargé décide de la hauteur
+  const items=segs.filter(hasLabel);
+  items.forEach(measureLabel);
+  const hautG=items.filter(s=>s.top);
+  const CY=Math.max(265,hautG.length?R1+8+pile(hautG):0);
+  const H=Math.max(
+    CY*2<=530?530:CY+R1+24,
+    CY+R1+24,
+    pile(items.filter(s=>s.right&&!s.top)),
+    pile(items.filter(s=>!s.right))
+  );
+  $('svg').setAttribute('viewBox',`0 0 ${W} ${H}`);
+
+  const {pt,sector}=geometry(CY);
+  let svg=SVG_DEFS;
+
+  // Parts
+  segs.forEach(s=>{
+    if(s.val>0) svg+=`<path d="${sector(R0,R1,s.a0,s.a1)}" fill="${s.color}" stroke="#fff" stroke-width="2"/>`;
+  });
+
+  // Zone hachurée « livrés Task Force » (fin de la part Livrés, côté débloqués)
+  if(tf>0) svg+=`<path d="${sector(R0,R1,tfStart,L.a1)}" fill="url(#hTF)" stroke="#fff" stroke-width="2"/>`;
+
+  // Contour Task Force : livrés TF + débloqués + débloqués avec recours
+  if(tfEnd-tfStart>0.001)
+    svg+=`<path d="${sector(R0-5,R1+5,tfStart,tfEnd)}" fill="none" stroke="${C.tf}" stroke-width="5" stroke-linejoin="round"/>`;
 
   // Centre
   svg+=`<text x="${CX}" y="${CY+4}" text-anchor="middle" font-size="46" font-weight="800" fill="${C.nombre}">${esc(fr(total))}</text>
         <text x="${CX}" y="${CY+28}" text-anchor="middle" font-size="14" letter-spacing="3" fill="${C.sub}">LOGEMENTS</text>
         <text x="${CX}" y="${CY+46}" text-anchor="middle" font-size="14" letter-spacing="3" fill="${C.sub}">SUIVIS</text>`;
 
-  // Étiquettes avec traits de repère
-  const items=segs.filter(aEtiquette).map(s=>{
-    s.y=CY+Math.sin(s.am)*(R1+26);
-    return s;
-  });
-  [true,false].forEach(side=>{
-    const g=items.filter(s=>s.right===side&&!s.top).sort((p,q)=>p.y-q.y);
-    if(!g.length) return;
-    g[0].y=Math.max(g[0].y,g[0].h/2+4);
-    for(let i=1;i<g.length;i++) g[i].y=Math.max(g[i].y,g[i-1].y+(g[i-1].h+g[i].h)/2+6);
-    const last=g[g.length-1];
-    if(last.y+last.h/2>H-6){
-      last.y=H-6-last.h/2;
-      for(let i=g.length-2;i>=0;i--) g[i].y=Math.min(g[i].y,g[i+1].y-(g[i].h+g[i+1].h)/2-6);
-    }
-  });
-  // Groupe du haut : empilé au-dessus du donut, la part la plus à gauche en haut (pas de croisement)
-  let yb=CY-R1-10;
-  items.filter(s=>s.top).sort((p,q)=>q.am-p.am).forEach(s=>{ s.y=yb-s.h/2; yb-=s.h+6; });
-
-  items.forEach(s=>{
-    const dir=s.right?1:-1;
-    const [x0,y0]=pt(R1+2,s.am);
-    const ex=CX+dir*(R1+30), lx=CX+dir*(R1+44);
-    const pts=s.top?`${f1(x0)},${f1(y0)} ${f1(x0)},${f1(s.y)} ${f1(lx-4)},${f1(s.y)}`
-                   :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(s.y)} ${f1(lx-dir*4)},${f1(s.y)}`;
-    svg+=`<polyline points="${pts}" fill="none" stroke="${C.ligne}" stroke-width="1"/>`;
-    const anchor=s.right?'start':'end';
-    let ty=s.y-s.h/2+19;
-    svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="21" font-weight="800" fill="${C.nombre}">${esc(fr(s.labelVal??s.val))}</text>`;
-    s.nameLines.forEach(line=>{ ty+=17; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="14" font-weight="700" fill="${C.nom}">${esc(line)}</text>`; });
-    if(s.sub){ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="13" fill="${C.sub}">${esc(s.sub)}</text>`; }
-    s.detailLines.forEach(line=>{ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="12" fill="${C.sub}">${esc(line)}</text>`; });
-    s.dontLines.forEach(line=>{ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="12" font-weight="600" fill="${C.nom}">${esc(line)}</text>`; });
-    if(s.extra){ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="13" font-weight="700" fill="${C.gold}">↳ ${esc(s.extra)}</text>`; }
-  });
+  // Étiquettes
+  items.forEach(s=>{ s.y=CY+Math.sin(s.am)*(R1+26); });
+  placeSides(items,CY,H);
+  placeTop(items,CY);
+  items.forEach(s=>{ svg+=drawLabel(s,pt); });
 
   $('svg').innerHTML=svg;
 }
