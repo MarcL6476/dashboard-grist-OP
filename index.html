@@ -24,7 +24,7 @@
   .bloc-row .bloc-2023{flex:1 1 320px;}
   .carte-box{flex:1 1 320px;min-height:230px;position:relative;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:#eef1f4;}
   #miniMap{position:absolute;inset:0;}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 12px 8px;}
   .card h2{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--soft);font-weight:600;}
   .chart-box{position:relative;height:220px;}
@@ -39,15 +39,8 @@
   #empty{text-align:center;padding:48px 12px;color:var(--soft);font-size:13px;}
   .hidden{display:none!important;}
   .note .warn{color:#B71C1C;font-size:11px;font-weight:600;margin-top:3px;}
-  .legend-group{margin:2px 0 6px;}
-  .legend-group .lg-title{font-size:14px;margin-bottom:4px;}
-  .legend-group .lg-sub{display:flex;align-items:center;gap:8px;margin:0 0 4px 16px;font-size:13px;}
-  .legend-group .legend-swatch{width:12px;height:12px;}
-  .chart-row{display:flex;align-items:flex-start;}
-  .chart-row .chart-box{flex:1 1 50%;height:200px;}
-  .custom-legend{flex:1 1 50%;padding-top:6px;font-size:14px;margin-left:-38px;}
-  .custom-legend .legend-item{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
-  .custom-legend .legend-swatch{width:14px;height:14px;border-radius:3px;flex:none;}
+  .note .warn{color:#B71C1C;font-size:11px;font-weight:600;margin-top:3px;}
+  .donut-box svg{width:100%;height:auto;display:block;}
 </style>
 </head>
 <body>
@@ -74,18 +67,12 @@
     </section>
     <section class="card">
       <h2 id="titreOps">État des opérations en cours</h2>
-      <div class="chart-row">
-        <div class="chart-box"><canvas id="chartBlocage"></canvas></div>
-        <div id="legendBlocage" class="custom-legend"></div>
-      </div>
+      <div class="donut-box"><svg id="svgBlocage" viewBox="0 0 520 300" xmlns="http://www.w3.org/2000/svg"></svg></div>
       <div class="note" id="noteBlocage"></div>
     </section>
     <section class="card">
       <h2 id="titreLogs">État des logements en cours</h2>
-      <div class="chart-row">
-        <div class="chart-box"><canvas id="chartBlocageLogs"></canvas></div>
-        <div id="legendBlocageLogs" class="custom-legend"></div>
-      </div>
+      <div class="donut-box"><svg id="svgBlocageLogs" viewBox="0 0 520 300" xmlns="http://www.w3.org/2000/svg"></svg></div>
       <div class="note" id="noteBlocageLogs"></div>
     </section>
   </div>
@@ -179,44 +166,14 @@ function normalizeLabel(str){
 const PBAR='#4C6B7A';
 const PPIE=['#7CB342','#AED581','#FB8C00','#E53935','#FFEB3B','#64B5F6','#8C6A8F','#C99A3D'];
 
-// Couleurs des camemberts : selon l'ordre des colonnes mappées
-const COL_BLOQUE='#E53935';
-const resolveColors=labels=>labels.map((lbl,i)=>isBloqueLabel(lbl)?COL_BLOQUE:PPIE[i%PPIE.length]);
 const isBloqueLabel=lbl=>{
   const norm=normalizeLabel(lbl);
   return (norm.includes('actuellement')||norm.includes('bloque'))&&!norm.includes('debloque');
 };
 
-// Sous-tranches de la part « bloquées » (hachure large à 45°, comme le donut)
-const COL_RECOURS='#E53935', COL_TF='#FB8C00';
-const HATCH_CSS=`repeating-linear-gradient(135deg,${COL_RECOURS} 0 5px,${COL_TF} 5px 9px)`;
-function hatchPattern(c1,c2){
-  const S=13, p=document.createElement('canvas'); p.width=p.height=S;
-  const g=p.getContext('2d');
-  g.fillStyle=c1; g.fillRect(0,0,S,S);
-  g.strokeStyle=c2; g.lineWidth=3.8;
-  g.beginPath();
-  [[0,S,S,0],[-S/2,S/2,S/2,-S/2],[S/2,S*1.5,S*1.5,S/2]].forEach(([x0,y0,x1,y1])=>{g.moveTo(x0,y0);g.lineTo(x1,y1);});
-  g.stroke();
-  return g.createPattern(p,'repeat');
-}
-
 const charts={};
 const destroy=id=>{ if(charts[id]){charts[id].destroy();delete charts[id];} };
 const baseOpts=()=>({responsive:true,maintainAspectRatio:false,animation:{duration:250}});
-
-function makePie(canvasId,vals,labels,colors){
-  destroy(canvasId);
-  charts[canvasId]=new Chart($(canvasId),{type:'pie',
-    data:{labels,datasets:[{data:vals,backgroundColor:colors}]},
-    options:{...baseOpts(),plugins:{
-      legend:{display:false},   // légende HTML personnalisée
-      datalabels:{color:'#2B3430',font:{size:15,weight:'700'},backgroundColor:'rgba(255,255,255,0.75)',
-        borderRadius:4,padding:{top:2,bottom:2,left:4,right:4},
-        display:ctx=>{const d=ctx.dataset.data,tot=d.reduce((x,y)=>x+y,0);return d[ctx.dataIndex]>0&&d[ctx.dataIndex]/tot>=0.05;},formatter:v=>v},
-    }},
-  });
-}
 
 // Libellés d'axe : coupe en 2 lignes au milieu si > 20 caractères
 const splitLabel=str=>{
@@ -334,12 +291,12 @@ grist.onRecord((record,mappings)=>{
   renderBloc2023(m);
   renderIndicateurs(m,mappings);
   renderStatuts({
-    m,mappings,key:'StatutsBlocage',canvasId:'chartBlocage',legendId:'legendBlocage',noteId:'noteBlocage',
+    m,mappings,key:'StatutsBlocage',svgId:'svgBlocage',noteId:'noteBlocage',centre:['OPÉRATIONS','EN COURS'],
     emptyMsg:'Mappez vos colonnes de blocage opérations.',feminin:true,
     recours:n(m.OpsRecours),tf:n(m.OpsFeuilleRouteTF),both:n(m.OpsBloqueesRecours),futur:n(m.FuturBlocage),
   });
   renderStatuts({
-    m,mappings,key:'StatutsBlocageLogs',canvasId:'chartBlocageLogs',legendId:'legendBlocageLogs',noteId:'noteBlocageLogs',
+    m,mappings,key:'StatutsBlocageLogs',svgId:'svgBlocageLogs',noteId:'noteBlocageLogs',centre:['LOGEMENTS','EN COURS'],
     emptyMsg:'Mappez vos colonnes de blocage logements.',feminin:false,
     recours:n(m.LogsRecours),tf:n(m.LogsFeuilleRouteTF),both:n(m.LogsBloqueesRecours),futur:0,
   });
@@ -375,52 +332,141 @@ function renderIndicateurs(m,mappings){
   });
 }
 
-// Camembert + légende personnalisée (ops et logements partagent ce rendu)
-// La part « bloquées » est découpée en tranches qui s'excluent :
-//   recours seul = recours − cumul ; feuille de route TF seule = tf − cumul ; cumul
-function renderStatuts({m,mappings,key,canvasId,legendId,noteId,emptyMsg,feminin,recours,tf,both,futur}){
-  const note=$(noteId), legendEl=$(legendId), vals=toArr(m[key]), ids=toArr(mappings&&mappings[key]);
-  if(!vals.length){note.textContent=emptyMsg;legendEl.innerHTML='';destroy(canvasId);return;}
+/* ============ Donut SVG (même design que donut-logements-widget) ============ */
+const DC={nombre:'#1F3864',nom:'#3F5273',sub:'#8497B0',ligne:'#9AA9BE'};
+const DCOL={rouge:'#FF0000',orange:'#EF6C00',normal:'#A8D5A2',debloque:'#27AE60',arret:'#000000',abandon:'#C9D1D9'};
+function colorFor(lbl,i){
+  const nm=normalizeLabel(lbl);
+  if(nm.includes('debloque')) return DCOL.debloque;
+  if(isBloqueLabel(lbl)) return DCOL.rouge;
+  if(nm.includes('normal')) return DCOL.normal;
+  if(nm.includes('arret')) return DCOL.arret;
+  if(nm.includes('abandon')) return DCOL.abandon;
+  return PPIE[i%PPIE.length];
+}
+const cap=str=>str?str.charAt(0).toUpperCase()+str.slice(1):str;
+const f1=x=>x.toFixed(1);
+function wrapText(text,max){
+  const out=[]; let cur='';
+  String(text).split(' ').forEach(w=>{
+    if(cur&&(cur+' '+w).length>max){out.push(cur);cur=w;} else cur=cur?cur+' '+w:w;
+  });
+  if(cur) out.push(cur);
+  return out;
+}
+
+// segs : [{val,label,color,hatch?}] — centre : [ligne1, ligne2] sous le total
+function drawDonut(svgId,segs,total,centre){
+  const el=$(svgId);
+  const W=520,CX=260,R1=84,R0=52;
+  const START=-Math.PI/2,TAU=Math.PI*2,TOP_FROM=TAU*320/360;
+  const somme=segs.reduce((t_,x)=>t_+x.val,0);
+  if(somme<=0){el.innerHTML='';return;}
+
+  let a=START;
+  segs.forEach(x=>{x.a0=a;x.a1=a+x.val/somme*TAU;x.am=(x.a0+x.a1)/2;a=x.a1;});
+
+  const vis=segs.filter(x=>x.val>0);
+  vis.forEach(x=>{
+    x.top=((x.am-START)%TAU+TAU)%TAU>=TOP_FROM;   // parts proches de 12 h : étiquettes en haut
+    x.right=x.top||Math.cos(x.am)>=0;
+    x.nameLines=wrapText(x.label,20);
+    x.h=23+14*x.nameLines.length;
+  });
+  const pile=g=>g.reduce((t_,x)=>t_+x.h,0)+Math.max(0,g.length-1)*5+16;
+  const hautG=vis.filter(x=>x.top);
+  const CY=Math.max(R1+24,hautG.length?R1+8+pile(hautG):0);
+  const H=Math.max(CY+R1+24,pile(vis.filter(x=>x.right&&!x.top)),pile(vis.filter(x=>!x.right)));
+  el.setAttribute('viewBox',`0 0 ${W} ${H}`);
+
+  const pt=(r,ang)=>[CX+r*Math.cos(ang),CY+r*Math.sin(ang)];
+  const sector=(r0,r1,a0,a1)=>{
+    if(a1-a0>=TAU) a1=a0+TAU-0.0001;
+    const big=a1-a0>Math.PI?1:0;
+    const [x0,y0]=pt(r1,a0),[x1,y1]=pt(r1,a1),[x2,y2]=pt(r0,a1),[x3,y3]=pt(r0,a0);
+    return `M${f1(x0)} ${f1(y0)}A${r1} ${r1} 0 ${big} 1 ${f1(x1)} ${f1(y1)}L${f1(x2)} ${f1(y2)}A${r0} ${r0} 0 ${big} 0 ${f1(x3)} ${f1(y3)}Z`;
+  };
+
+  const hid='h_'+svgId;
+  let svg=`<defs><pattern id="${hid}" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
+    <rect width="9" height="9" fill="${DCOL.rouge}"/><rect width="3.5" height="9" fill="${DCOL.orange}"/></pattern></defs>`;
+
+  vis.forEach(x=>{
+    svg+=`<path d="${sector(R0,R1,x.a0,x.a1)}" fill="${x.hatch?`url(#${hid})`:x.color}" stroke="#fff" stroke-width="2"/>`;
+  });
+
+  // Centre
+  const tot=fr(total), fs=tot.length<=3?30:tot.length<=4?26:tot.length<=5?22:18;
+  svg+=`<text x="${CX}" y="${CY+fs*0.12}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${DC.nombre}">${esc(tot)}</text>`
+      +`<text x="${CX}" y="${CY+fs*0.12+16}" text-anchor="middle" font-size="10" letter-spacing="2" fill="${DC.sub}">${esc(centre[0])}</text>`
+      +`<text x="${CX}" y="${CY+fs*0.12+29}" text-anchor="middle" font-size="10" letter-spacing="2" fill="${DC.sub}">${esc(centre[1])}</text>`;
+
+  // Étiquettes avec traits de repère
+  vis.forEach(x=>{ x.y=CY+Math.sin(x.am)*(R1+20); });
+  [true,false].forEach(side=>{
+    const g=vis.filter(x=>x.right===side&&!x.top).sort((p_,q_)=>p_.y-q_.y);
+    if(!g.length) return;
+    g[0].y=Math.max(g[0].y,g[0].h/2+4);
+    for(let i=1;i<g.length;i++) g[i].y=Math.max(g[i].y,g[i-1].y+(g[i-1].h+g[i].h)/2+5);
+    const last=g[g.length-1];
+    if(last.y+last.h/2>H-6){
+      last.y=H-6-last.h/2;
+      for(let i=g.length-2;i>=0;i--) g[i].y=Math.min(g[i].y,g[i+1].y-(g[i].h+g[i+1].h)/2-5);
+    }
+  });
+  // Groupe du haut : empilé au-dessus du donut, la part la plus à gauche en haut (pas de croisement)
+  let yb=CY-R1-10;
+  vis.filter(x=>x.top).sort((p_,q_)=>q_.am-p_.am).forEach(x=>{ x.y=yb-x.h/2; yb-=x.h+5; });
+
+  vis.forEach(x=>{
+    const dir=x.right?1:-1;
+    const [x0,y0]=pt(R1+2,x.am);
+    const ex=CX+dir*(R1+22), lx=CX+dir*(R1+34);
+    const pts=x.top?`${f1(x0)},${f1(y0)} ${f1(x0)},${f1(x.y)} ${f1(lx-4)},${f1(x.y)}`
+                   :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(x.y)} ${f1(lx-dir*4)},${f1(x.y)}`;
+    svg+=`<polyline points="${pts}" fill="none" stroke="${DC.ligne}" stroke-width="1"/>`;
+    const anchor=x.right?'start':'end';
+    let ty=x.y-x.h/2+17;
+    svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="19" font-weight="800" fill="${DC.nombre}">${esc(fr(x.val))}</text>`;
+    x.nameLines.forEach(line=>{ ty+=14; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="12" font-weight="700" fill="${DC.nom}">${esc(line)}</text>`; });
+  });
+  el.innerHTML=svg;
+}
+
+// Statuts : la part « bloquées » est découpée en tranches qui s'excluent
+//   recours seul = recours − cumul ; feuille de route TF seule = tf − cumul ; cumul (hachuré)
+function renderStatuts({m,mappings,key,svgId,noteId,emptyMsg,feminin,recours,tf,both,futur,centre}){
+  const note=$(noteId), vals=toArr(m[key]), ids=toArr(mappings&&mappings[key]);
+  if(!vals.length){note.textContent=emptyMsg;$(svgId).innerHTML='';return;}
 
   const futurHtml=futur>0?`<div class="futur">${futur} futur blocage${s(futur)} détecté${s(futur)}</div>`:'';
-
   const labels0=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
-  const colors0=resolveColors(labels0);
 
   const bi=labels0.findIndex(isBloqueLabel);
   const B=bi>=0?n(vals[bi]):0;
-  const soloR=recours-both, soloT=tf-both;
-  const sum=soloR+soloT+both;
+  const soloR=recours-both, soloT=tf-both, sum=soloR+soloT+both;
   const canSplit=bi>=0&&soloR>=0&&soloT>=0&&sum>0&&sum<=B;
+  const bloq=k=>`bloqué${feminin?'e':''}${s(k)}`;
+
   let warn='';
   if(bi>=0&&B>0&&!canSplit){
     warn=(recours===0&&tf===0&&both===0)
       ?'Détail recours / feuille de route non renseigné (colonnes non mappées ou à 0).'
-      :`Colonnes incohérentes : recours ${recours} + feuille de route ${tf} − cumul ${both} = ${sum}, pour ${B} bloqué${feminin?'e':''}${s(B)}.`;
+      :`Colonnes incohérentes : recours ${recours} + feuille de route ${tf} − cumul ${both} = ${sum}, pour ${B} ${bloq(B)}.`;
   }
   note.innerHTML=futurHtml+(warn?`<div class="warn">⚠ ${esc(warn)}</div>`:'');
 
-  const data=[], labels=[], bg=[], legend=[];
+  const segs=[];
   labels0.forEach((lbl,i)=>{
-    if(!(canSplit&&i===bi)){
-      data.push(vals[i]); labels.push(lbl); bg.push(colors0[i]);
-      legend.push(`<div class="legend-item"><span class="legend-swatch" style="background:${colors0[i]}"></span><span><strong>${fr(n(vals[i]))}</strong> ${esc(lbl)}</span></div>`);
-      return;
-    }
-    const subs=[
-      {v:soloR, lbl:'par recours seul',                css:COL_RECOURS, fill:COL_RECOURS},
-      {v:soloT, lbl:'feuille de route TF (hors recours)', css:COL_TF,      fill:COL_TF},
-      {v:both,  lbl:'recours + feuille de route TF',   css:HATCH_CSS,   fill:hatchPattern(COL_RECOURS,COL_TF)},
-      {v:B-sum, lbl:'autres',                          css:colors0[i],  fill:colors0[i]},
-    ].filter(x=>x.v>0);
-    subs.forEach(x=>{ data.push(x.v); labels.push(x.lbl); bg.push(x.fill); });
-    legend.push(`<div class="legend-group"><div class="lg-title"><strong>${B}</strong> ${esc(lbl)}</div>`
-      +subs.map(x=>`<div class="lg-sub"><span class="legend-swatch" style="background:${x.css}"></span>${x.v} ${esc(x.lbl)}</div>`).join('')
-      +`</div>`);
+    if(!(canSplit&&i===bi)){ segs.push({val:n(vals[i]),label:cap(lbl),color:colorFor(lbl,i)}); return; }
+    [
+      {v:soloR, l:`${bloq(soloR)} par recours seul`,                 color:DCOL.rouge},
+      {v:soloT, l:`${bloq(soloT)} avec feuille de route TF seule`,   color:DCOL.orange},
+      {v:both,  l:`${bloq(both)} par recours + feuille de route TF`, hatch:true},
+      {v:B-sum, l:`autres ${bloq(B-sum)}`,                           color:DCOL.rouge},
+    ].filter(x=>x.v>0).forEach(x=>segs.push({val:x.v,label:cap(x.l),color:x.color,hatch:x.hatch}));
   });
-  legendEl.innerHTML=legend.join('');
-
-  makePie(canvasId,data,labels,bg);
+  drawDonut(svgId,segs,segs.reduce((t_,x)=>t_+x.val,0),centre);
 }
 
 function renderTableauAnnees(m){
