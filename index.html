@@ -38,10 +38,9 @@
   .tbl small{color:var(--soft);}
   #empty{text-align:center;padding:48px 12px;color:var(--soft);font-size:13px;}
   .hidden{display:none!important;}
-  .legend-group{margin:2px 0 6px;}
-  .legend-group .lg-title{font-size:14px;margin-bottom:4px;}
-  .legend-group .lg-sub{display:flex;align-items:center;gap:8px;margin:0 0 4px 16px;font-size:13px;}
-  .legend-group .legend-swatch{width:12px;height:12px;}
+  .blocage-detail{margin:2px 0 6px 22px;}
+  .blocage-detail .bd-line{color:#C05A00;font-size:11px;font-weight:700;line-height:1.6;}
+  .blocage-detail .bd-glyph{display:inline-block;width:14px;font-family:monospace;}
   .chart-row{display:flex;align-items:flex-start;}
   .chart-row .chart-box{flex:1 1 50%;height:200px;}
   .custom-legend{flex:1 1 50%;padding-top:6px;font-size:14px;margin-left:-38px;}
@@ -184,22 +183,6 @@ const isBloqueLabel=lbl=>{
   const norm=normalizeLabel(lbl);
   return (norm.includes('actuellement')||norm.includes('bloque'))&&!norm.includes('debloque');
 };
-
-// Sous-tranches de la part « bloquées »
-const COL_RECOURS='#C62828', COL_TF='#FB8C00';
-const HATCH_CSS=`repeating-linear-gradient(45deg,${COL_RECOURS} 0 3px,${COL_TF} 3px 6px)`;
-function hatchPattern(c1,c2){
-  const p=document.createElement('canvas'); p.width=p.height=10;
-  const g=p.getContext('2d');
-  g.fillStyle=c1; g.fillRect(0,0,10,10);
-  g.strokeStyle=c2; g.lineWidth=3.5;
-  g.beginPath();
-  g.moveTo(0,10); g.lineTo(10,0);
-  g.moveTo(-5,5); g.lineTo(5,-5);
-  g.moveTo(5,15); g.lineTo(15,5);
-  g.stroke();
-  return g.createPattern(p,'repeat');
-}
 
 const charts={};
 const destroy=id=>{ if(charts[id]){charts[id].destroy();delete charts[id];} };
@@ -376,44 +359,31 @@ function renderIndicateurs(m,mappings){
 }
 
 // Camembert + légende personnalisée (ops et logements partagent ce rendu)
-// La part « bloquées » est découpée en tranches qui s'excluent :
-//   recours seul = recours − cumul ; feuille de route TF seule = tf − cumul ; cumul
 function renderStatuts({m,mappings,key,canvasId,legendId,noteId,emptyMsg,feminin,recours,tf,both,futur}){
   const note=$(noteId), legendEl=$(legendId), vals=toArr(m[key]), ids=toArr(mappings&&mappings[key]);
   if(!vals.length){note.textContent=emptyMsg;legendEl.innerHTML='';destroy(canvasId);return;}
 
   note.innerHTML=futur>0?`<div class="futur">${futur} futur blocage${s(futur)} détecté${s(futur)}</div>`:'';
 
-  const labels0=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
-  const colors0=resolveColors(labels0);
+  const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
+  const colors=resolveColors(labels);
 
-  const bi=labels0.findIndex(isBloqueLabel);
-  const B=bi>=0?n(vals[bi]):0;
-  const soloR=recours-both, soloT=tf-both;
-  const sum=soloR+soloT+both;
-  const canSplit=bi>=0&&soloR>=0&&soloT>=0&&sum>0&&sum<=B;
+  const bloq=k=>`bloqué${feminin?'e':''}${s(k)}`;
+  const items=[];
+  if(recours>0) items.push(`${recours} ${bloq(recours)} par recours`);
+  if(tf>0)      items.push(`${tf} ${bloq(tf)} hors recours`);
+  if(both>0)    items.push(`(dont ${both} ${bloq(both)} + recours)`);
+  const detailHtml=items.length?'<div class="blocage-detail">'+items.map((txt,i)=>{
+    const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
+    return `<div class="bd-line"><span class="bd-glyph">${glyph}</span>${txt}</div>`;
+  }).join('')+'</div>':'';
 
-  const data=[], labels=[], bg=[], legend=[];
-  labels0.forEach((lbl,i)=>{
-    if(!(canSplit&&i===bi)){
-      data.push(vals[i]); labels.push(lbl); bg.push(colors0[i]);
-      legend.push(`<div class="legend-item"><span class="legend-swatch" style="background:${colors0[i]}"></span>${esc(lbl)}</div>`);
-      return;
-    }
-    const subs=[
-      {v:soloR, lbl:'par recours seul',                css:COL_RECOURS, fill:COL_RECOURS},
-      {v:soloT, lbl:'feuille de route TF (hors recours)', css:COL_TF,      fill:COL_TF},
-      {v:both,  lbl:'recours + feuille de route TF',   css:HATCH_CSS,   fill:hatchPattern(COL_RECOURS,COL_TF)},
-      {v:B-sum, lbl:'autres',                          css:colors0[i],  fill:colors0[i]},
-    ].filter(x=>x.v>0);
-    subs.forEach(x=>{ data.push(x.v); labels.push(x.lbl); bg.push(x.fill); });
-    legend.push(`<div class="legend-group"><div class="lg-title"><strong>${B}</strong> ${esc(lbl)}</div>`
-      +subs.map(x=>`<div class="lg-sub"><span class="legend-swatch" style="background:${x.css}"></span>${x.v} ${esc(x.lbl)}</div>`).join('')
-      +`</div>`);
-  });
-  legendEl.innerHTML=legend.join('');
+  legendEl.innerHTML=labels.map((lbl,i)=>
+    `<div class="legend-item"><span class="legend-swatch" style="background:${colors[i]}"></span>${esc(lbl)}</div>`
+    +(isBloqueLabel(lbl)?detailHtml:'')
+  ).join('');
 
-  makePie(canvasId,data,labels,bg);
+  makePie(canvasId,vals,labels,colors);
 }
 
 function renderTableauAnnees(m){
