@@ -106,6 +106,7 @@ grist.ready({
     col('LLSTFLivres',       'Dont LLS TF livrés',                         'Numeric'),
     col('AccesTFLivres',     'Dont Acc. TF livrés',                        'Numeric'),
     col('FuturBlocage',      'Futur blocage détecté (nb logements)',       'Numeric'),
+    col('LogsFuturBlocage',  'Logements concernés par un futur blocage',   'Numeric'),
     col('OpsDebloquees',     'Dont opérations déjà débloquées',                   'Numeric'),
     col('OpsArret',          "Dont opérations à l'arrêt",                         'Numeric'),
     col('OpsRecours',        'Dont opérations bloquées par recours',              'Numeric'),
@@ -293,12 +294,14 @@ grist.onRecord((record,mappings)=>{
   {
     m,mappings,key:'StatutsBlocage',svgId:'svgBlocage',noteId:'noteBlocage',centre:['OPÉRATIONS','EN COURS'],arret:opsArret,arretMot:'opération',
     emptyMsg:'Mappez vos colonnes de blocage opérations.',feminin:true,
-    recours:n(m.OpsRecours),tf:n(m.OpsFeuilleRouteTF),both:n(m.OpsBloqueesRecours),futur:n(m.FuturBlocage),
+    recours:n(m.OpsRecours),tf:n(m.OpsFeuilleRouteTF),both:n(m.OpsBloqueesRecours),
+    futurTxt:n(m.FuturBlocage)>0?`${n(m.FuturBlocage)} futur blocage${s(n(m.FuturBlocage))} détecté${s(n(m.FuturBlocage))}`:'',
   },
   {
     m,mappings,key:'StatutsBlocageLogs',svgId:'svgBlocageLogs',noteId:'noteBlocageLogs',centre:['LOGEMENTS','EN COURS'],arret:logsArret,arretMot:'logement',
     emptyMsg:'Mappez vos colonnes de blocage logements.',feminin:false,
-    recours:n(m.LogsRecours),tf:n(m.LogsFeuilleRouteTF),both:n(m.LogsBloqueesRecours),futur:0,
+    recours:n(m.LogsRecours),tf:n(m.LogsFeuilleRouteTF),both:n(m.LogsBloqueesRecours),
+    futurTxt:n(m.LogsFuturBlocage)>0?`${fr(n(m.LogsFuturBlocage))} logement${s(n(m.LogsFuturBlocage))} concerné${s(n(m.LogsFuturBlocage))} par un futur blocage`:'',
   },
   ];
   // Les deux donuts partagent la même hauteur de dessin et la même ligne de centre (alignés à l'horizontale)
@@ -480,11 +483,11 @@ function drawDonut(svgId,segs,total,centre){
 
 // Statuts : la part « bloquées » est découpée en tranches qui s'excluent
 //   recours seul = recours − cumul ; feuille de route TF seule = tf − cumul ; cumul (hachuré)
-function renderStatuts({m,mappings,key,svgId,noteId,emptyMsg,feminin,recours,tf,both,futur,centre,arret,arretMot}){
+function renderStatuts({m,mappings,key,svgId,noteId,emptyMsg,feminin,recours,tf,both,futurTxt,centre,arret,arretMot}){
   const note=$(noteId), vals=toArr(m[key]), ids=toArr(mappings&&mappings[key]);
   if(!vals.length){note.textContent=emptyMsg;$(svgId).innerHTML='';return;}
 
-  const futurHtml=futur>0?`<div class="futur">${futur} futur blocage${s(futur)} détecté${s(futur)}</div>`:'';
+  const futurHtml=futurTxt?`<div class="futur">${futurTxt}</div>`:'';
   const labels0=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
 
   const bi=labels0.findIndex(isBloqueLabel);
