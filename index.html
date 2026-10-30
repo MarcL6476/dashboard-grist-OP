@@ -25,10 +25,10 @@
   .carte-box{flex:1 1 320px;min-height:230px;position:relative;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:#eef1f4;}
   #miniMap{position:absolute;inset:0;}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 12px 8px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 12px 8px;display:flex;flex-direction:column;}
   .card h2{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--soft);font-weight:600;}
   .chart-box{position:relative;height:220px;}
-  .note{font-size:11px;color:var(--soft);margin-top:5px;}
+  .note{font-size:11px;color:var(--soft);margin-top:auto;padding-top:8px;}
   .note .futur{color:#C05A00;font-size:13px;font-weight:700;}
   .badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--soft);}
   .badge.on{background:var(--sage);border-color:var(--sage);color:#fff;}
@@ -38,7 +38,8 @@
   .tbl small{color:var(--soft);}
   #empty{text-align:center;padding:48px 12px;color:var(--soft);font-size:13px;}
   .hidden{display:none!important;}
-  .note .warn{color:#B71C1C;font-size:11px;font-weight:600;margin-top:3px;}
+  .note .arret{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px;}
+  .note .arret i{display:inline-block;width:10px;height:10px;background:#000;border-radius:2px;margin-right:6px;}
   .note .warn{color:#B71C1C;font-size:11px;font-weight:600;margin-top:3px;}
   .donut-box svg{width:100%;height:auto;display:block;}
 </style>
@@ -275,10 +276,8 @@ grist.onRecord((record,mappings)=>{
 
   $('titreIndicateurs').innerHTML=`Nombre de logements dans les <strong>${nbOps}</strong> opération${s(nbOps)} en cours`;
   $('titreOps').innerHTML=`État des <strong>${nbOps}</strong> opération${s(nbOps)} en cours`
-    +(opsArret>0?` <strong>ET ${opsArret} opération${s(opsArret)} à l'arrêt</strong>`:'')
     +(opsDeb>0?`<br>— <strong>dont</strong> ${opsDeb} opération${s(opsDeb)} déjà débloquée${s(opsDeb)}`:'');
   $('titreLogs').innerHTML=`État des <strong>${fr(nbLogsViv)}</strong> logement${s(nbLogsViv)} en cours`
-    +(logsArret>0?` <strong>ET ${logsArret} logement${s(logsArret)} à l'arrêt</strong>`:'')
     +(logsDeb>0?`<br>— <strong>dont</strong> ${logsDeb} logement${s(logsDeb)} déjà débloqué${s(logsDeb)}`:'');
 
   $('headerBadges').innerHTML=[
@@ -291,12 +290,12 @@ grist.onRecord((record,mappings)=>{
   renderBloc2023(m);
   renderIndicateurs(m,mappings);
   renderStatuts({
-    m,mappings,key:'StatutsBlocage',svgId:'svgBlocage',noteId:'noteBlocage',centre:['OPÉRATIONS','EN COURS'],
+    m,mappings,key:'StatutsBlocage',svgId:'svgBlocage',noteId:'noteBlocage',centre:['OPÉRATIONS','EN COURS'],arret:opsArret,arretMot:'opération',
     emptyMsg:'Mappez vos colonnes de blocage opérations.',feminin:true,
     recours:n(m.OpsRecours),tf:n(m.OpsFeuilleRouteTF),both:n(m.OpsBloqueesRecours),futur:n(m.FuturBlocage),
   });
   renderStatuts({
-    m,mappings,key:'StatutsBlocageLogs',svgId:'svgBlocageLogs',noteId:'noteBlocageLogs',centre:['LOGEMENTS','EN COURS'],
+    m,mappings,key:'StatutsBlocageLogs',svgId:'svgBlocageLogs',noteId:'noteBlocageLogs',centre:['LOGEMENTS','EN COURS'],arret:logsArret,arretMot:'logement',
     emptyMsg:'Mappez vos colonnes de blocage logements.',feminin:false,
     recours:n(m.LogsRecours),tf:n(m.LogsFeuilleRouteTF),both:n(m.LogsBloqueesRecours),futur:0,
   });
@@ -381,7 +380,8 @@ function drawDonut(svgId,segs,total,centre){
     const lx=CX+(x.right?1:-1)*(R1+34);
     const avail=x.right?W-lx-x.numW-6:lx-x.numW-6;
     x.nameLines=wrapText(x.label,Math.max(14,Math.floor(avail/6.4)));
-    x.h=Math.max(26,12+14*x.nameLines.length);
+    x.nLines=x.nameLines.length+(x.sub?1:0);
+    x.h=Math.max(26,12+14*x.nLines);
   });
   const pile=g=>g.reduce((t_,x)=>t_+x.h,0)+Math.max(0,g.length-1)*4+10;
   const hautG=vis.filter(x=>x.top);
@@ -436,19 +436,20 @@ function drawDonut(svgId,segs,total,centre){
                    :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(x.y)} ${f1(lx-dir*4)},${f1(x.y)}`;
     svg+=`<polyline points="${pts}" fill="none" stroke="${DC.ligne}" stroke-width="1"/>`;
     const anchor=x.right?'start':'end';
-    const by=x.y-x.h/2+(x.h-14*x.nameLines.length)/2+10;   // ligne de base de la 1re ligne
+    const by=x.y-x.h/2+(x.h-14*x.nLines)/2+10;   // ligne de base de la 1re ligne
     svg+=`<text x="${f1(lx)}" y="${f1(by+3)}" text-anchor="${anchor}" font-size="19" font-weight="800" fill="${DC.nombre}">${esc(x.numTxt)}</text>`;
     const nx=lx+dir*x.numW;
     x.nameLines.forEach((line,k)=>{
       svg+=`<text x="${f1(nx)}" y="${f1(by+14*k+3)}" text-anchor="${anchor}" font-size="12" font-weight="700" fill="${DC.nom}">${esc(line)}</text>`;
     });
+    if(x.sub) svg+=`<text x="${f1(nx)}" y="${f1(by+14*x.nameLines.length+3)}" text-anchor="${anchor}" font-size="12" fill="${DC.sub}">${esc(x.sub)}</text>`;
   });
   el.innerHTML=svg;
 }
 
 // Statuts : la part « bloquées » est découpée en tranches qui s'excluent
 //   recours seul = recours − cumul ; feuille de route TF seule = tf − cumul ; cumul (hachuré)
-function renderStatuts({m,mappings,key,svgId,noteId,emptyMsg,feminin,recours,tf,both,futur,centre}){
+function renderStatuts({m,mappings,key,svgId,noteId,emptyMsg,feminin,recours,tf,both,futur,centre,arret,arretMot}){
   const note=$(noteId), vals=toArr(m[key]), ids=toArr(mappings&&mappings[key]);
   if(!vals.length){note.textContent=emptyMsg;$(svgId).innerHTML='';return;}
 
@@ -467,17 +468,19 @@ function renderStatuts({m,mappings,key,svgId,noteId,emptyMsg,feminin,recours,tf,
       ?'Détail recours / feuille de route non renseigné (colonnes non mappées ou à 0).'
       :`Colonnes incohérentes : recours ${recours} + feuille de route ${tf} − cumul ${both} = ${sum}, pour ${B} ${bloq(B)}.`;
   }
-  note.innerHTML=futurHtml+(warn?`<div class="warn">⚠ ${esc(warn)}</div>`:'');
+  const arretHtml=arret>0?`<div class="arret"><i></i>${fr(arret)} ${arretMot}${s(arret)} à l'arrêt</div>`:'';
+  note.innerHTML=arretHtml+futurHtml+(warn?`<div class="warn">⚠ ${esc(warn)}</div>`:'');
 
   const segs=[];
   labels0.forEach((lbl,i)=>{
     if(!(canSplit&&i===bi)){ segs.push({val:n(vals[i]),label:cap(lbl),color:colorFor(lbl,i)}); return; }
+    // mêmes libellés, couleurs et ordre que le donut des logements
     [
-      {v:soloR, l:`${bloq(soloR)} par recours seul`,                 color:DCOL.rouge},
-      {v:soloT, l:`${bloq(soloT)} avec feuille de route TF seule`,   color:DCOL.orange},
-      {v:both,  l:`${bloq(both)} par recours + feuille de route TF`, hatch:true},
-      {v:B-sum, l:`autres ${bloq(B-sum)}`,                           color:DCOL.rouge},
-    ].filter(x=>x.v>0).forEach(x=>segs.push({val:x.v,label:cap(x.l),color:x.color,hatch:x.hatch}));
+      {v:soloT, l:`${bloq(soloT)} avec une feuille de route`,                 color:DCOL.orange},
+      {v:both,  l:`${bloq(both)} avec une feuille de route et par recours`,    hatch:true},
+      {v:soloR, l:`${bloq(soloR)}`, sub:'recours juridique',                  color:DCOL.rouge},
+      {v:B-sum, l:`autres ${bloq(B-sum)}`,                                    color:DCOL.rouge},
+    ].filter(x=>x.v>0).forEach(x=>segs.push({val:x.v,label:cap(x.l),sub:x.sub,color:x.color,hatch:x.hatch}));
   });
   drawDonut(svgId,segs,segs.reduce((t_,x)=>t_+x.val,0),centre);
 }
