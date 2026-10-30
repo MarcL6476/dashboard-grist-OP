@@ -17,30 +17,32 @@
   header.fiche{border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:8px;}
   .header-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
   header.fiche h1{margin:0;font-size:19px;font-weight:650;}
-  .maj{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);white-space:nowrap;}
   .header-badges{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;flex:1;}
   .section-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);font-weight:600;margin:4px 0 6px;}
-  .bloc-2023{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 14px;margin-bottom:12px;font-size:14px;line-height:2;}
+  .bloc-2023{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 14px;font-size:14px;line-height:2;}
   .bloc-row{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;margin-bottom:12px;}
-  .bloc-row .bloc-2023{flex:1 1 320px;margin-bottom:0;}
+  .bloc-row .bloc-2023{flex:1 1 320px;}
   .carte-box{flex:1 1 320px;min-height:230px;position:relative;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:#eef1f4;}
-  #miniMap{position:absolute;top:0;left:0;right:0;bottom:0;}
+  #miniMap{position:absolute;inset:0;}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:10px 12px 8px;}
   .card h2{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--soft);font-weight:600;}
   .chart-box{position:relative;height:220px;}
   .note{font-size:11px;color:var(--soft);margin-top:5px;}
+  .note .futur{color:#C05A00;font-size:13px;font-weight:700;}
   .badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--soft);}
   .badge.on{background:var(--sage);border-color:var(--sage);color:#fff;}
   .tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;}
   .tbl th{background:var(--card);text-transform:uppercase;font-size:10px;letter-spacing:.04em;color:var(--soft);padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;width:33%;}
   .tbl td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:center;width:33%;}
+  .tbl small{color:var(--soft);}
   #empty{text-align:center;padding:48px 12px;color:var(--soft);font-size:13px;}
   .hidden{display:none!important;}
-  .blocage-detail{margin:2px 0 6px 22px;}
-  .blocage-detail .bd-line{color:#C05A00;font-size:11px;font-weight:700;line-height:1.6;}
-  .blocage-detail .bd-glyph{display:inline-block;width:14px;font-family:monospace;color:#C05A00;}
-  .chart-row{display:flex;gap:0px;align-items:flex-start;}
+  .legend-group{margin:2px 0 6px;}
+  .legend-group .lg-title{font-size:14px;margin-bottom:4px;}
+  .legend-group .lg-sub{display:flex;align-items:center;gap:8px;margin:0 0 4px 16px;font-size:13px;}
+  .legend-group .legend-swatch{width:12px;height:12px;}
+  .chart-row{display:flex;align-items:flex-start;}
   .chart-row .chart-box{flex:1 1 50%;height:200px;}
   .custom-legend{flex:1 1 50%;padding-top:6px;font-size:14px;margin-left:-38px;}
   .custom-legend .legend-item{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
@@ -59,7 +61,7 @@
   <div class="section-label">Opérations recensées depuis 2023</div>
   <div class="bloc-row" id="blocRow">
     <div class="bloc-2023" id="bloc2023"></div>
-    <div class="carte-box" id="carteBox"><div id="miniMap"></div></div>
+    <div class="carte-box"><div id="miniMap"></div></div>
   </div>
 
   <div class="section-label">Opérations vivantes</div>
@@ -93,6 +95,7 @@
 <script>
 if (window.ChartDataLabels) Chart.register(window.ChartDataLabels);
 
+/* ============ Mapping des colonnes Grist ============ */
 const col=(name,title,type,extra={})=>({name,title,type,optional:true,...extra});
 grist.ready({
   columns:[
@@ -109,20 +112,20 @@ grist.ready({
     col('CarteLats',         'Carte : latitudes des opérations (liste)',   'Any'),
     col('CarteLngs',         'Carte : longitudes des opérations (liste)',  'Any'),
     col('CarteEPCI',         'Carte : EPCI de la commune',                 'Any'),
-    col('NbLogsVivants',    'Nb logements en cours (vivants)',            'Numeric'),
-    col('LogsTFLivres',     'Dont logements TF livrés',                   'Numeric'),
-    col('LLSTFLivres',      'Dont LLS TF livrés',                         'Numeric'),
-    col('AccesTFLivres',    'Dont Acc. TF livrés',                        'Numeric'),
-    col('FuturBlocage',      'Futur blocage détecté (nb logements)',        'Numeric'),
+    col('NbLogsVivants',     'Nb logements en cours (vivants)',            'Numeric'),
+    col('LogsTFLivres',      'Dont logements TF livrés',                   'Numeric'),
+    col('LLSTFLivres',       'Dont LLS TF livrés',                         'Numeric'),
+    col('AccesTFLivres',     'Dont Acc. TF livrés',                        'Numeric'),
+    col('FuturBlocage',      'Futur blocage détecté (nb logements)',       'Numeric'),
     col('OpsDebloquees',     'Dont opérations déjà débloquées',                   'Numeric'),
     col('OpsArret',          "Dont opérations à l'arrêt",                         'Numeric'),
     col('OpsRecours',        'Dont opérations bloquées par recours',              'Numeric'),
     col('OpsFeuilleRouteTF', 'Dont opérations bloquées avec feuille de route TF', 'Numeric'),
     col('OpsBloqueesRecours','Dont opérations bloquées + recours',                'Numeric'),
-    col('LogsArret',          "Dont logements à l'arrêt",                         'Numeric'),
-    col('LogsDebloquees',     'Dont logements déjà débloqués',                    'Numeric'),
-    col('LogsRecours',        'Dont logements bloqués par recours',               'Numeric'),
-    col('LogsFeuilleRouteTF', 'Dont logements bloqués avec feuille de route TF',  'Numeric'),
+    col('LogsArret',         "Dont logements à l'arrêt",                          'Numeric'),
+    col('LogsDebloquees',    'Dont logements déjà débloqués',                     'Numeric'),
+    col('LogsRecours',       'Dont logements bloqués par recours',                'Numeric'),
+    col('LogsFeuilleRouteTF','Dont logements bloqués avec feuille de route TF',   'Numeric'),
     col('LogsBloqueesRecours','Dont logements bloqués + recours',                 'Numeric'),
     col('Indicateurs',       'Logements : total + 4 colonnes "dont"',     'Numeric',{allowMultiple:true,optional:false}),
     col('StatutsBlocage',    'Statuts blocage – opérations (6 colonnes)',  'Numeric',{allowMultiple:true,optional:false}),
@@ -148,11 +151,21 @@ grist.ready({
   requiredAccess:'read table',
 });
 
-const PBAR='#4C6B7A';
-const PPIE=['#7CB342','#AED581','#FB8C00','#E53935','#FFEB3B','#64B5F6','#8C6A8F','#C99A3D'];
+/* ============ Utilitaires ============ */
+const $=id=>document.getElementById(id);
+const n=v=>typeof v==='number'?v:0;
+const toArr=v=>Array.isArray(v)?v:[];
+const s=k=>k>1?'s':'';                       // pluriel
+const fr=v=>v.toLocaleString('fr-FR');
+const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const prettify=c=>{ try{return decodeURIComponent(String(c||'').replace(/_/g,' '));}catch{return String(c||'').replace(/_/g,' ');} };
+const formatEuro=v=>typeof v==='number'?fr(v)+' €':(v||'0 €');
+const isTruthy=v=>v===true||(typeof v==='number'&&v!==0)||(typeof v==='string'&&['oui','true','x','1','yes'].includes(v.trim().toLowerCase()));
+const toggle=show=>{['grid','header','blocRow'].forEach(id=>$(id).classList.toggle('hidden',!show));$('empty').classList.toggle('hidden',show);};
 
-function normalizeLabel(s){
-  return String(s||'')
+// Insensible aux accents, à la casse, aux apostrophes typographiques et à la ponctuation
+function normalizeLabel(str){
+  return String(str||'')
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .toLowerCase()
     .replace(/['’ʼ]/g,"'")
@@ -161,73 +174,78 @@ function normalizeLabel(s){
     .trim();
 }
 
-function isBloqueLabel(lbl){
+/* ============ Couleurs & graphiques ============ */
+const PBAR='#4C6B7A';
+const PPIE=['#7CB342','#AED581','#FB8C00','#E53935','#FFEB3B','#64B5F6','#8C6A8F','#C99A3D'];
+
+// Couleurs des camemberts : selon l'ordre des colonnes mappées
+const resolveColors=labels=>labels.map((_,i)=>PPIE[i%PPIE.length]);
+const isBloqueLabel=lbl=>{
   const norm=normalizeLabel(lbl);
   return (norm.includes('actuellement')||norm.includes('bloque'))&&!norm.includes('debloque');
+};
+
+// Sous-tranches de la part « bloquées »
+const COL_RECOURS='#C62828', COL_TF='#FB8C00';
+const HATCH_CSS=`repeating-linear-gradient(45deg,${COL_RECOURS} 0 3px,${COL_TF} 3px 6px)`;
+function hatchPattern(c1,c2){
+  const p=document.createElement('canvas'); p.width=p.height=10;
+  const g=p.getContext('2d');
+  g.fillStyle=c1; g.fillRect(0,0,10,10);
+  g.strokeStyle=c2; g.lineWidth=3.5;
+  g.beginPath();
+  g.moveTo(0,10); g.lineTo(10,0);
+  g.moveTo(-5,5); g.lineTo(5,-5);
+  g.moveTo(5,15); g.lineTo(15,5);
+  g.stroke();
+  return g.createPattern(p,'repeat');
 }
 
-const STATUS_KEYWORDS=[
-  {kw:'feuille',       color:'#FB8C00'},
-  {kw:'recours',       color:'#FFEB3B'},
-  {kw:'actuellement',  color:'#E53935'},
-  {kw:'bloques',  color:'#E53935'},
-  {kw:'arret',         color:'#000000'},
-  {kw:'normal',        color:'#7CB342'},
-];
+const charts={};
+const destroy=id=>{ if(charts[id]){charts[id].destroy();delete charts[id];} };
+const baseOpts=()=>({responsive:true,maintainAspectRatio:false,animation:{duration:250}});
 
-function resolveColors(labels){
-  let fallbackIdx=0;
-  return labels.map(lbl=>{
-    const norm=normalizeLabel(lbl);
-    const hit=STATUS_KEYWORDS.find(({kw})=>norm.includes(kw));
-    if(hit) return hit.color;
-    const c=PPIE[fallbackIdx%PPIE.length];
-    fallbackIdx++;
-    return c;
+function makePie(canvasId,vals,labels,colors){
+  destroy(canvasId);
+  charts[canvasId]=new Chart($(canvasId),{type:'pie',
+    data:{labels,datasets:[{data:vals,backgroundColor:colors}]},
+    options:{...baseOpts(),plugins:{
+      legend:{display:false},   // légende HTML personnalisée
+      datalabels:{color:'#2B3430',font:{size:15,weight:'700'},backgroundColor:'rgba(255,255,255,0.75)',
+        borderRadius:4,padding:{top:2,bottom:2,left:4,right:4},
+        display:ctx=>ctx.dataset.data[ctx.dataIndex]>0,formatter:v=>v},
+    }},
   });
 }
-const charts={};
-const $=id=>document.getElementById(id);
-const n=v=>typeof v==='number'?v:0;
-const toArr=v=>Array.isArray(v)?v:[];
-const destroy=id=>{ if(charts[id]){charts[id].destroy();delete charts[id];} };
-const prettify=c=>{ try{return decodeURIComponent(String(c||'').replace(/_/g,' '));}catch{return String(c||'').replace(/_/g,' ');} };
-const formatDate=v=>{const d=typeof v==='number'?new Date(v*1000):new Date(v);return(d&&!isNaN(d))?d.toLocaleDateString('fr-FR'):'—';};
-const formatEuro=v=>typeof v==='number'?v.toLocaleString('fr-FR')+' €':(v||'0 €');
-const isTruthy=v=>v===true||(typeof v==='number'&&v!==0)||(typeof v==='string'&&['oui','true','x','1','yes'].includes(v.trim().toLowerCase()));
-const toggle=show=>{['grid','header','bloc2023','blocRow'].forEach(id=>$(id).classList.toggle('hidden',!show));$('empty').classList.toggle('hidden',show);};
-const baseOpts=()=>({responsive:true,maintainAspectRatio:false,animation:{duration:250}});
-const pieOpts=()=>({...baseOpts(),plugins:{
-  legend:{display:true,position:'right',labels:{boxWidth:14,font:{size:15},padding:10}},
-  datalabels:{color:'#2B3430',font:{size:15,weight:'700'},backgroundColor:'rgba(255,255,255,0.75)',
-    borderRadius:4,padding:{top:2,bottom:2,left:4,right:4},
-    display:ctx=>ctx.dataset.data[ctx.dataIndex]>0,formatter:v=>v},
-}});
 
+// Libellés d'axe : coupe en 2 lignes au milieu si > 20 caractères
+const splitLabel=str=>{
+  if(str.length<=20) return str;
+  const sp=str.lastIndexOf(' ',Math.floor(str.length/2));
+  return sp>0?[str.slice(0,sp),str.slice(sp+1)]:str;
+};
 
-// ---- Mini-carte (marqueurs seulement) ----
-// Seuls les EPCI dont le nom (normalisé) CONTIENT un de ces mots-clés sont colorés par commune.
+/* ============ Mini-carte (marqueurs seulement) ============ */
+// Seuls les EPCI dont le nom (normalisé) contient un de ces mots-clés sont colorés par commune
 const EPCI_COLORISES=['pays basque'];
 const COMMUNE_PALETTE=[
   '#b5534a','#5f8f5a','#d1a23f','#4f6f9f','#8a5f9a','#4f9aa8',
   '#c47a9a','#9aa84f','#3f7f76','#9a7048','#7a3f45','#6f7f8f'
 ];
-function colorForIndex(idx){
-  if(idx<COMMUNE_PALETTE.length) return COMMUNE_PALETTE[idx];
-  return `hsl(${Math.round((idx*137.508)%360)}, 40%, 50%)`;
-}
+const colorForIndex=i=>i<COMMUNE_PALETTE.length?COMMUNE_PALETTE[i]:`hsl(${Math.round((i*137.508)%360)}, 40%, 50%)`;
 const communeColors={};
 let miniMap=null, miniLayer=null, communesCarte=[], selectedKey='', lastFitKey=null;
+
+const isColore=c=>EPCI_COLORISES.some(kw=>c.epci.includes(kw));
 
 grist.onRecords((records,mappings)=>{
   communesCarte=(records||[]).map(r=>{
     const c=grist.mapColumnNames(r,mappings);
     if(!c) return null;
-    const lats=toArr(c.CarteLats), lngs=toArr(c.CarteLngs), pts=[];
-    lats.forEach((la,i)=>{
+    const lngs=toArr(c.CarteLngs), pts=[];
+    toArr(c.CarteLats).forEach((la,i)=>{
       const lat=parseFloat(la), lng=parseFloat(lngs[i]);
-      if(isNaN(lat)||isNaN(lng)) return;
-      if(Math.abs(lat)<0.0001&&Math.abs(lng)<0.0001) return;
+      if(isNaN(lat)||isNaN(lng)||(Math.abs(lat)<0.0001&&Math.abs(lng)<0.0001)) return;
       pts.push([lat,lng]);
     });
     return {key:normalizeLabel(c.Libelle), epci:normalizeLabel(c.CarteEPCI), pts};
@@ -235,47 +253,44 @@ grist.onRecords((records,mappings)=>{
   drawMiniMap();
 });
 
-function setSelectionCarte(libelle){
-  selectedKey=normalizeLabel(libelle);
-  drawMiniMap();
+function initMiniMap(box){
+  miniMap=L.map(box,{zoomControl:true,preferCanvas:true,maxZoom:19,attributionControl:false}).setView([46.6,2.4],6);
+  L.tileLayer(
+    'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile'+
+    '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM'+
+    '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg',
+    {maxZoom:19,maxNativeZoom:19,tileSize:256,updateWhenIdle:true,keepBuffer:1}
+  ).addTo(miniMap);
+  miniLayer=L.layerGroup().addTo(miniMap);
+}
+
+function markerStyle(c,isSel){
+  if(isColore(c)&&communeColors[c.key]){
+    return {radius:isSel?8:5,color:'#ffffff',weight:2,opacity:0.5,fillColor:communeColors[c.key],fillOpacity:isSel?0.9:0.35};
+  }
+  return {radius:isSel?8:5,color:isSel?'#c2540c':'#e07b1f',weight:isSel?3:1.5,opacity:0.9,fillColor:'#f5a742',fillOpacity:isSel?0.75:0.3};
 }
 
 function drawMiniMap(){
   const box=$('miniMap');
-  if(!box||box.offsetWidth===0||typeof L==='undefined') return; // bloc masqué : on redessine à l'affichage
-  if(!miniMap){
-    miniMap=L.map(box,{zoomControl:true,preferCanvas:true,maxZoom:19,attributionControl:false}).setView([46.6,2.4],6);
-    L.tileLayer(
-      'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile'+
-      '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM'+
-      '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg',
-      {maxZoom:19,maxNativeZoom:19,tileSize:256,updateWhenIdle:true,keepBuffer:1}
-    ).addTo(miniMap);
-    miniLayer=L.layerGroup().addTo(miniMap);
-  }
+  if(!box||box.offsetWidth===0||typeof L==='undefined') return; // bloc masqué : redessiné à l'affichage
+  if(!miniMap) initMiniMap(box);
   miniMap.invalidateSize();
   miniLayer.clearLayers();
 
-  const isColore=c=>EPCI_COLORISES.some(kw=>c.epci.includes(kw));
+  // Attribution stable d'une couleur par commune (EPCI colorisés uniquement)
   const nouvelles=[...new Set(communesCarte.filter(c=>c.pts.length&&c.key&&isColore(c)&&!communeColors[c.key]).map(c=>c.key))].sort();
   let idx=Object.keys(communeColors).length;
   nouvelles.forEach(k=>{communeColors[k]=colorForIndex(idx++);});
 
-  const styleFor=(c,isSel)=>{
-    if(isColore(c)&&communeColors[c.key]){
-      return {radius:isSel?8:5,color:'#ffffff',weight:2,opacity:0.5,fillColor:communeColors[c.key],fillOpacity:isSel?0.9:0.35};
-    }
-    return {radius:isSel?8:5,color:isSel?'#c2540c':'#e07b1f',weight:isSel?3:1.5,opacity:0.9,fillColor:'#f5a742',fillOpacity:isSel?0.75:0.3};
-  };
-
   const all=[], sel=[];
-  // communes non sélectionnées d'abord, sélectionnée au-dessus
+  // communes non sélectionnées d'abord, sélectionnée par-dessus
   [false,true].forEach(pass=>{
     communesCarte.forEach(c=>{
       const isSel=!!selectedKey&&c.key===selectedKey;
       if(isSel!==pass) return;
       c.pts.forEach(pt=>{
-        L.circleMarker(pt,{...styleFor(c,isSel),interactive:false}).addTo(miniLayer);
+        L.circleMarker(pt,{...markerStyle(c,isSel),interactive:false}).addTo(miniLayer);
         all.push(pt);
         if(isSel) sel.push(pt);
       });
@@ -290,23 +305,24 @@ function drawMiniMap(){
   }
 }
 
+/* ============ Rendu de la ligne sélectionnée ============ */
 grist.onRecord((record,mappings)=>{
   const m=grist.mapColumnNames(record);
   if(!m){toggle(false);return;}
   toggle(true);
   $('titre').textContent=m.Libelle||'Opération';
 
-  const nbOps=n(m.NbOperations), nbLogsViv=n(m.NbLogsVivants), opsDeb=n(m.OpsDebloquees), opsArret=n(m.OpsArret);
-  $('titreIndicateurs').innerHTML=`Nombre de logements dans les <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`;
+  const nbOps=n(m.NbOperations), nbLogsViv=n(m.NbLogsVivants);
+  const opsDeb=n(m.OpsDebloquees), opsArret=n(m.OpsArret);
+  const logsDeb=n(m.LogsDebloquees), logsArret=n(m.LogsArret);
 
-  $('titreOps').innerHTML=`État des <strong>${nbOps}</strong> opération${nbOps>1?'s':''} en cours`
-    +(opsArret>0?` <strong>ET ${opsArret} opération${opsArret>1?'s':''} à l'arrêt</strong>`:'')
-    +(opsDeb>0?`<br>— <strong>dont</strong> ${opsDeb} opération${opsDeb>1?'s':''} déjà débloquée${opsDeb>1?'s':''}`:'');
-
-  const logsArret=n(m.LogsArret), logsDeb=n(m.LogsDebloquees);
-  $('titreLogs').innerHTML=`État des <strong>${nbLogsViv.toLocaleString('fr-FR')}</strong> logement${nbLogsViv>1?'s':''} en cours`
-    +(logsArret>0?` <strong>ET ${logsArret} logement${logsArret>1?'s':''} à l'arrêt</strong>`:'')
-    +(logsDeb>0?`<br>— <strong>dont</strong> ${logsDeb} logement${logsDeb>1?'s':''} déjà débloqué${logsDeb>1?'s':''}`:'');
+  $('titreIndicateurs').innerHTML=`Nombre de logements dans les <strong>${nbOps}</strong> opération${s(nbOps)} en cours`;
+  $('titreOps').innerHTML=`État des <strong>${nbOps}</strong> opération${s(nbOps)} en cours`
+    +(opsArret>0?` <strong>ET ${opsArret} opération${s(opsArret)} à l'arrêt</strong>`:'')
+    +(opsDeb>0?`<br>— <strong>dont</strong> ${opsDeb} opération${s(opsDeb)} déjà débloquée${s(opsDeb)}`:'');
+  $('titreLogs').innerHTML=`État des <strong>${fr(nbLogsViv)}</strong> logement${s(nbLogsViv)} en cours`
+    +(logsArret>0?` <strong>ET ${logsArret} logement${s(logsArret)} à l'arrêt</strong>`:'')
+    +(logsDeb>0?`<br>— <strong>dont</strong> ${logsDeb} logement${s(logsDeb)} déjà débloqué${s(logsDeb)}`:'');
 
   $('headerBadges').innerHTML=[
     {label:'Fond friche',val:m.FondFriche},
@@ -317,10 +333,20 @@ grist.onRecord((record,mappings)=>{
 
   renderBloc2023(m);
   renderIndicateurs(m,mappings);
-  renderBlocage(m,mappings);
-  renderBlocageLogs(m,mappings);
+  renderStatuts({
+    m,mappings,key:'StatutsBlocage',canvasId:'chartBlocage',legendId:'legendBlocage',noteId:'noteBlocage',
+    emptyMsg:'Mappez vos colonnes de blocage opérations.',feminin:true,
+    recours:n(m.OpsRecours),tf:n(m.OpsFeuilleRouteTF),both:n(m.OpsBloqueesRecours),futur:n(m.FuturBlocage),
+  });
+  renderStatuts({
+    m,mappings,key:'StatutsBlocageLogs',canvasId:'chartBlocageLogs',legendId:'legendBlocageLogs',noteId:'noteBlocageLogs',
+    emptyMsg:'Mappez vos colonnes de blocage logements.',feminin:false,
+    recours:n(m.LogsRecours),tf:n(m.LogsFeuilleRouteTF),both:n(m.LogsBloqueesRecours),futur:0,
+  });
   renderTableauAnnees(m);
-  setSelectionCarte(m.Libelle);
+
+  selectedKey=normalizeLabel(m.Libelle);
+  drawMiniMap();
 });
 
 function renderBloc2023(m){
@@ -329,20 +355,19 @@ function renderBloc2023(m){
   const tf=n(m.OpsTFLivrees), tfLogs=n(m.LogsTFLivres), tfLLS=n(m.LLSTFLivres), tfAcc=n(m.AccesTFLivres);
   const ab=n(m.OpsAbandonnees);
   $('bloc2023').innerHTML=
-    `<strong>${ops} opération${ops>1?'s':''}</strong> — soit <strong>${logs.toLocaleString('fr-FR')} logement${logs>1?'s':''}</strong>
-     <strong>(dont ${ls.toLocaleString('fr-FR')} LLS ; ${acc.toLocaleString('fr-FR')} Acc.)</strong><br>
-     — dont ${liv} déjà livrée${liv>1?'s':''} (${livLogs.toLocaleString('fr-FR')} logement${livLogs>1?'s':''})<br>
-     — dont ${tf} débloquée${tf>1?'s':''} par la Task Force et livrée${tf>1?'s':''} — soit ${tfLogs.toLocaleString('fr-FR')} logement${tfLogs>1?'s':''} (${tfLLS} LLS ; ${tfAcc} Acc.)<br>
-     — dont ${ab} abandonnée${ab>1?'s':''}`;
+    `<strong>${ops} opération${s(ops)}</strong> — soit <strong>${fr(logs)} logement${s(logs)}</strong>
+     <strong>(dont ${fr(ls)} LLS ; ${fr(acc)} Acc.)</strong><br>
+     — dont ${liv} déjà livrée${s(liv)} (${fr(livLogs)} logement${s(livLogs)})<br>
+     — dont ${tf} débloquée${s(tf)} par la Task Force et livrée${s(tf)} — soit ${fr(tfLogs)} logement${s(tfLogs)} (${tfLLS} LLS ; ${tfAcc} Acc.)<br>
+     — dont ${ab} abandonnée${s(ab)}`;
 }
 
 function renderIndicateurs(m,mappings){
   const note=$('noteIndicateurs'), vals=toArr(m.Indicateurs), ids=toArr(mappings&&mappings.Indicateurs);
-  if(!vals.length){note.textContent='Mappez vos colonnes logements.';destroy('indicateurs');return;}
-  note.textContent='';
-  const split=s=>s.length<=20?s:(sp=>sp>0?[s.slice(0,sp),s.slice(sp+1)]:s)(s.lastIndexOf(' ',Math.floor(s.length/2)));
-  const labels=(ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Ind.'+(i+1))).map(split);
   destroy('indicateurs');
+  if(!vals.length){note.textContent='Mappez vos colonnes logements.';return;}
+  note.textContent='';
+  const labels=(ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Ind.'+(i+1))).map(splitLabel);
   charts.indicateurs=new Chart($('chartIndicateurs'),{
     type:'bar',data:{labels,datasets:[{data:vals,backgroundColor:PBAR,borderRadius:3}]},
     options:{...baseOpts(),plugins:{legend:{display:false},datalabels:{display:false}},
@@ -350,104 +375,62 @@ function renderIndicateurs(m,mappings){
   });
 }
 
-function makePie(canvasId,vals,labels,colors,opts={}){
-  destroy(canvasId);
-  const backgroundColor=colors||PPIE.slice(0,vals.length);
-  const options=pieOpts();
-  if(opts.hideLegend) options.plugins.legend.display=false;
-  charts[canvasId]=new Chart($(canvasId),{type:'pie',
-    data:{labels,datasets:[{data:vals,backgroundColor}]},
-    options,
+// Camembert + légende personnalisée (ops et logements partagent ce rendu)
+// La part « bloquées » est découpée en tranches qui s'excluent :
+//   recours seul = recours − cumul ; feuille de route TF seule = tf − cumul ; cumul
+function renderStatuts({m,mappings,key,canvasId,legendId,noteId,emptyMsg,feminin,recours,tf,both,futur}){
+  const note=$(noteId), legendEl=$(legendId), vals=toArr(m[key]), ids=toArr(mappings&&mappings[key]);
+  if(!vals.length){note.textContent=emptyMsg;legendEl.innerHTML='';destroy(canvasId);return;}
+
+  note.innerHTML=futur>0?`<div class="futur">${futur} futur blocage${s(futur)} détecté${s(futur)}</div>`:'';
+
+  const labels0=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
+  const colors0=resolveColors(labels0);
+
+  const bi=labels0.findIndex(isBloqueLabel);
+  const B=bi>=0?n(vals[bi]):0;
+  const soloR=recours-both, soloT=tf-both;
+  const sum=soloR+soloT+both;
+  const canSplit=bi>=0&&soloR>=0&&soloT>=0&&sum>0&&sum<=B;
+
+  const data=[], labels=[], bg=[], legend=[];
+  labels0.forEach((lbl,i)=>{
+    if(!(canSplit&&i===bi)){
+      data.push(vals[i]); labels.push(lbl); bg.push(colors0[i]);
+      legend.push(`<div class="legend-item"><span class="legend-swatch" style="background:${colors0[i]}"></span>${esc(lbl)}</div>`);
+      return;
+    }
+    const subs=[
+      {v:soloR, lbl:'par recours seul',                css:COL_RECOURS, fill:COL_RECOURS},
+      {v:soloT, lbl:'feuille de route TF (hors recours)', css:COL_TF,      fill:COL_TF},
+      {v:both,  lbl:'recours + feuille de route TF',   css:HATCH_CSS,   fill:hatchPattern(COL_RECOURS,COL_TF)},
+      {v:B-sum, lbl:'autres',                          css:colors0[i],  fill:colors0[i]},
+    ].filter(x=>x.v>0);
+    subs.forEach(x=>{ data.push(x.v); labels.push(x.lbl); bg.push(x.fill); });
+    legend.push(`<div class="legend-group"><div class="lg-title"><strong>${B}</strong> ${esc(lbl)}</div>`
+      +subs.map(x=>`<div class="lg-sub"><span class="legend-swatch" style="background:${x.css}"></span>${x.v} ${esc(x.lbl)}</div>`).join('')
+      +`</div>`);
   });
-}
+  legendEl.innerHTML=legend.join('');
 
-function renderBlocage(m,mappings){
-  const note=$('noteBlocage'), legendEl=$('legendBlocage'), vals=toArr(m.StatutsBlocage), ids=toArr(mappings&&mappings.StatutsBlocage);
-  if(!vals.length){note.textContent='Mappez vos colonnes de blocage opérations.';legendEl.innerHTML='';destroy('chartBlocage');return;}
-
-  const fb=n(m.FuturBlocage);
-  note.innerHTML=fb>0?`<div style="color:#C05A00;font-size:13px;font-weight:700;">${fb} futur blocage${fb>1?'s':''} détecté${fb>1?'s':''}</div>`:'';
-
-  const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
-  const colors=resolveColors(labels);
-
-  const recours=n(m.OpsRecours), tf=n(m.OpsFeuilleRouteTF), both=n(m.OpsBloqueesRecours);
-  const items=[];
-  if(recours>0) items.push(`${recours} bloquée${recours>1?'s':''} par recours`);
-  if(tf>0) items.push(`${tf} bloquée${tf>1?'s':''} hors recours`);
-  if(both>0) items.push(`(dont ${both} bloquée${both>1?'s':''} + recours)`);
-  const detailHtml=items.length?'<div class="blocage-detail">'+items.map((txt,i)=>{
-    const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
-    return `<div class="bd-line"><span class="bd-glyph">${glyph}</span>${txt}</div>`;
-  }).join('')+'</div>':'';
-
-  legendEl.innerHTML=labels.map((lbl,i)=>{
-    return `<div class="legend-item"><span class="legend-swatch" style="background:${colors[i]}"></span>${lbl}</div>`
-      +(isBloqueLabel(lbl)?detailHtml:'');
-  }).join('');
-
-  makePie('chartBlocage',vals,labels,colors,{hideLegend:true});
-}
-
-function renderBlocageLogs(m,mappings){
-  const note=$('noteBlocageLogs'), legendEl=$('legendBlocageLogs'), vals=toArr(m.StatutsBlocageLogs), ids=toArr(mappings&&mappings.StatutsBlocageLogs);
-  if(!vals.length){note.textContent='Mappez vos colonnes de blocage logements.';legendEl.innerHTML='';destroy('chartBlocageLogs');return;}
-  note.textContent='';
-
-  const labels=ids.length===vals.length?ids.map(prettify):vals.map((_,i)=>'Statut '+(i+1));
-  const colors=resolveColors(labels);
-
-  const recours=n(m.LogsRecours), tf=n(m.LogsFeuilleRouteTF), both=n(m.LogsBloqueesRecours);
-  const items=[];
-  if(recours>0) items.push(`${recours} bloqué${recours>1?'s':''} par recours`);
-  if(tf>0) items.push(`${tf} bloqué${tf>1?'s':''} hors recours`);
-  if(both>0) items.push(`(dont ${both} bloqué${both>1?'s':''} + recours)`);
-  const detailHtml=items.length?'<div class="blocage-detail">'+items.map((txt,i)=>{
-    const glyph=items.length===1?'—':(i===0?'┌':(i===items.length-1?'└':'├'));
-    return `<div class="bd-line"><span class="bd-glyph">${glyph}</span>${txt}</div>`;
-  }).join('')+'</div>':'';
-
-  legendEl.innerHTML=labels.map((lbl,i)=>{
-    return `<div class="legend-item"><span class="legend-swatch" style="background:${colors[i]}"></span>${lbl}</div>`
-      +(isBloqueLabel(lbl)?detailHtml:'');
-  }).join('');
-
-  makePie('chartBlocageLogs',vals,labels,colors,{hideLegend:true});
+  makePie(canvasId,data,labels,bg);
 }
 
 function renderTableauAnnees(m){
   const el=$('tableauAnnees');
-  // Exclusion des avancements 6/7/8 dans le tableau des années
-  // --------------------------------------------------------------
-  // AvancementListe contient TOUS les avancements, un par opération, dans le
-  // MÊME ORDRE que les autres listes du groupe (AnneesLancement, LogementsLan,
-  // LLSLan, etc.) : la valeur à l'index i correspond toujours à la même
-  // opération dans toutes ces listes.
-  //
-  // Pourquoi ne pas filtrer directement côté Grist (dans la formule de la
-  // colonne) ? Parce qu'une liste filtrée aurait moins d'éléments que les
-  // autres listes du groupe, donc l'index i ne pointerait plus vers la même
-  // opération d'une liste à l'autre — le tableau afficherait alors des
-  // chiffres faux, sans erreur visible pour le prévenir.
-  //
-  // On garde donc AvancementListe complète et non filtrée, et c'est ICI,
-  // dans le widget, qu'on décide pour chaque index i si l'opération doit
-  // être comptée ou exclue, avant de l'ajouter au total de l'année.
+  // AvancementListe est dans le même ordre que les autres listes (index i = même opération).
+  // On ne filtre donc PAS côté Grist (les index se décaleraient) : l'exclusion des
+  // avancements 6/7/8 se fait ici, index par index.
   const avancements=toArr(m.AvancementListe);
-  const estExclu=i=>{
-    const av=String(avancements[i]==null?'':avancements[i]).trim();
-    return /^[678](\.|$)/.test(av); // avancement commençant par 6, 7 ou 8
-  };
+  const estExclu=i=>/^[678](\.|$)/.test(String(avancements[i]==null?'':avancements[i]).trim());
+
   function build(years,logs,vl,inter,lls,acces){
-    const d={};
+    const d={}, L_=toArr(logs), V=toArr(vl), I=toArr(inter), S=toArr(lls), A=toArr(acces);
     toArr(years).forEach((yr,i)=>{
-      if(yr==null||yr==='') return;
-      if(estExclu(i)) return;
+      if(yr==null||yr===''||estExclu(i)) return;
       const k=String(yr);
-      if(!d[k]) d[k]={ops:0,log:0,vl:0,inter:0,lls:0,acces:0};
-      d[k].ops++;
-      d[k].log+=n(toArr(logs)[i]); d[k].vl+=n(toArr(vl)[i]);
-      d[k].inter+=n(toArr(inter)[i]); d[k].lls+=n(toArr(lls)[i]); d[k].acces+=n(toArr(acces)[i]);
+      const o=d[k]||(d[k]={ops:0,log:0,vl:0,inter:0,lls:0,acces:0});
+      o.ops++; o.log+=n(L_[i]); o.vl+=n(V[i]); o.inter+=n(I[i]); o.lls+=n(S[i]); o.acces+=n(A[i]);
     });
     return d;
   }
@@ -455,10 +438,11 @@ function renderTableauAnnees(m){
   const liv=build(m.AnneesLivraison,m.LogementsLiv,m.VenteLivreLiv,m.InterLiv,m.LLSLiv,m.AccesLiv);
   const years=[...new Set([...Object.keys(lan),...Object.keys(liv)])].sort();
   if(!years.length){el.innerHTML='';return;}
+
   const cell=d=>{
     if(!d) return '—';
-    const det=[d.vl?`${d.vl} VL`:'',d.inter?`${d.inter} Int.`:'',d.lls?`${d.lls} LLS`:'',d.acces?`${d.acces} Acc.`:''].filter(Boolean).join('; ');
-    return `${d.ops} op. / ${d.log} log.`+(det?`<br><small style="color:var(--soft)">(dont ${det})</small>`:'');
+    const det=[d.vl&&`${d.vl} VL`,d.inter&&`${d.inter} Int.`,d.lls&&`${d.lls} LLS`,d.acces&&`${d.acces} Acc.`].filter(Boolean).join('; ');
+    return `${d.ops} op. / ${d.log} log.`+(det?`<br><small>(dont ${det})</small>`:'');
   };
   el.innerHTML=`<table class="tbl"><thead><tr><th>Année</th><th>Lancement travaux</th><th>Livraison</th></tr></thead><tbody>`
     +years.map(y=>`<tr><td>${y}</td><td>${cell(lan[y])}</td><td>${cell(liv[y])}</td></tr>`).join('')
