@@ -289,16 +289,28 @@ grist.onRecord((record,mappings)=>{
 
   renderBloc2023(m);
   renderIndicateurs(m,mappings);
-  renderStatuts({
+  const statutsCfg=[
+  {
     m,mappings,key:'StatutsBlocage',svgId:'svgBlocage',noteId:'noteBlocage',centre:['OPÉRATIONS','EN COURS'],arret:opsArret,arretMot:'opération',
     emptyMsg:'Mappez vos colonnes de blocage opérations.',feminin:true,
     recours:n(m.OpsRecours),tf:n(m.OpsFeuilleRouteTF),both:n(m.OpsBloqueesRecours),futur:n(m.FuturBlocage),
-  });
-  renderStatuts({
+  },
+  {
     m,mappings,key:'StatutsBlocageLogs',svgId:'svgBlocageLogs',noteId:'noteBlocageLogs',centre:['LOGEMENTS','EN COURS'],arret:logsArret,arretMot:'logement',
     emptyMsg:'Mappez vos colonnes de blocage logements.',feminin:false,
     recours:n(m.LogsRecours),tf:n(m.LogsFeuilleRouteTF),both:n(m.LogsBloqueesRecours),futur:0,
-  });
+  },
+  ];
+  // Les deux donuts partagent la même hauteur de dessin et la même ligne de centre (alignés à l'horizontale)
+  donutNeed={}; donutShared=null;
+  statutsCfg.forEach(renderStatuts);
+  const needs=Object.values(donutNeed);
+  if(needs.length>1){
+    donutShared={CY:Math.max(...needs.map(v=>v.CY)),H:Math.max(...needs.map(v=>v.H)),left:needs.some(v=>v.left)};
+    statutsCfg.forEach(renderStatuts);
+  }
+  donutShared=null;
+  alignTitres();
   renderTableauAnnees(m);
 
   selectedKey=normalizeLabel(m.Libelle);
@@ -354,6 +366,16 @@ function wrapText(text,max){
   return out;
 }
 
+let donutNeed={}, donutShared=null;
+
+// Même hauteur pour les titres des deux cartes donut (sinon les donuts se décalent)
+function alignTitres(){
+  const els=['titreOps','titreLogs'].map($);
+  els.forEach(e=>{e.style.minHeight='';});
+  const h=Math.max(...els.map(e=>e.offsetHeight));
+  if(h>0) els.forEach(e=>{e.style.minHeight=h+'px';});
+}
+
 // segs : [{val,label,color,hatch?}] — centre : [ligne1, ligne2] sous le total
 function drawDonut(svgId,segs,total,centre){
   const el=$(svgId);
@@ -371,7 +393,8 @@ function drawDonut(svgId,segs,total,centre){
     x.right=x.top||Math.cos(x.am)>=0;
   });
   // Pas d'étiquette à gauche : le donut se colle à gauche et les étiquettes disposent de toute la largeur
-  const CX=vis.some(x=>!x.right)?W/2:R1+16;
+  const left=vis.some(x=>!x.right)||!!(donutShared&&donutShared.left);
+  const CX=left?W/2:R1+16;
 
   // Étiquette sur une ligne : nombre en gras + nom (qui passe à la ligne si besoin)
   vis.forEach(x=>{
@@ -385,13 +408,20 @@ function drawDonut(svgId,segs,total,centre){
   });
   const pile=g=>g.reduce((t_,x)=>t_+x.h,0)+Math.max(0,g.length-1)*4+10;
   const hautG=vis.filter(x=>x.top);
-  const CY=Math.max(R1+14,hautG.length?R1+6+pile(hautG):0);
-  const H=Math.max(CY+R1+14,pile(vis.filter(x=>x.right&&!x.top)),pile(vis.filter(x=>!x.right)));
+  const CY0=Math.max(R1+14,hautG.length?R1+6+pile(hautG):0);
+  const CY=donutShared?Math.max(CY0,donutShared.CY):CY0;
+  const H0=Math.max(CY+R1+14,pile(vis.filter(x=>x.right&&!x.top)),pile(vis.filter(x=>!x.right)));
+  const H=donutShared?Math.max(H0,donutShared.H):H0;
+  donutNeed[svgId]={CY:CY0,H:H0,left:vis.some(x=>!x.right)};
   el.setAttribute('viewBox',`0 0 ${W} ${H}`);
 
   const pt=(r,ang)=>[CX+r*Math.cos(ang),CY+r*Math.sin(ang)];
   const sector=(r0,r1,a0,a1)=>{
-    if(a1-a0>=TAU) a1=a0+TAU-0.0001;
+    if(a1-a0>=TAU-0.02){   // (quasi) 100 % : anneau complet en deux demi-arcs (un seul arc de 360° ne s'affiche pas)
+      const [ox,oy]=pt(r1,a0),[ox2,oy2]=pt(r1,a0+Math.PI),[ix,iy]=pt(r0,a0),[ix2,iy2]=pt(r0,a0+Math.PI);
+      return `M${f1(ox)} ${f1(oy)}A${r1} ${r1} 0 1 1 ${f1(ox2)} ${f1(oy2)}A${r1} ${r1} 0 1 1 ${f1(ox)} ${f1(oy)}Z`
+            +`M${f1(ix)} ${f1(iy)}A${r0} ${r0} 0 1 0 ${f1(ix2)} ${f1(iy2)}A${r0} ${r0} 0 1 0 ${f1(ix)} ${f1(iy)}Z`;
+    }
     const big=a1-a0>Math.PI?1:0;
     const [x0,y0]=pt(r1,a0),[x1,y1]=pt(r1,a1),[x2,y2]=pt(r0,a1),[x3,y3]=pt(r0,a0);
     return `M${f1(x0)} ${f1(y0)}A${r1} ${r1} 0 ${big} 1 ${f1(x1)} ${f1(y1)}L${f1(x2)} ${f1(y2)}A${r0} ${r0} 0 ${big} 0 ${f1(x3)} ${f1(y3)}Z`;
@@ -401,7 +431,8 @@ function drawDonut(svgId,segs,total,centre){
   let svg=`<defs><pattern id="${hid}" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
     <rect width="9" height="9" fill="${DCOL.rouge}"/><rect width="3.5" height="9" fill="${DCOL.orange}"/></pattern></defs>`;
 
-  vis.forEach(x=>{
+  // les parts quasi complètes d'abord, pour ne pas recouvrir les petites
+  [...vis].sort((p_,q_)=>(q_.a1-q_.a0)-(p_.a1-p_.a0)).filter(x=>x.a1-x.a0>=TAU-0.02).concat(vis.filter(x=>x.a1-x.a0<TAU-0.02)).forEach(x=>{
     svg+=`<path d="${sector(R0,R1,x.a0,x.a1)}" fill="${x.hatch?`url(#${hid})`:x.color}" stroke="#fff" stroke-width="2"/>`;
   });
 
@@ -516,6 +547,10 @@ function renderTableauAnnees(m){
   el.innerHTML=`<table class="tbl"><thead><tr><th>Année</th><th>Lancement travaux</th><th>Livraison</th></tr></thead><tbody>`
     +years.map(y=>`<tr><td>${y}</td><td>${cell(lan[y])}</td><td>${cell(liv[y])}</td></tr>`).join('')
     +`</tbody></table>`;
+}
+if(window.ResizeObserver){
+  let lw=0;
+  new ResizeObserver(es=>{const w=Math.round(es[0].contentRect.width);if(w!==lw){lw=w;alignTitres();}}).observe($('grid'));
 }
 </script>
 </body>
