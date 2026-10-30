@@ -334,7 +334,7 @@ function renderIndicateurs(m,mappings){
 
 /* ============ Donut SVG (même design que donut-logements-widget) ============ */
 const DC={nombre:'#1F3864',nom:'#3F5273',sub:'#8497B0',ligne:'#9AA9BE'};
-const DCOL={rouge:'#FF0000',orange:'#EF6C00',normal:'#A8D5A2',debloque:'#27AE60',arret:'#000000',abandon:'#C9D1D9'};
+const DCOL={rouge:'#FF0000',orange:'#EF6C00',normal:'#7CB342',debloque:'#27AE60',arret:'#000000',abandon:'#C9D1D9'};
 function colorFor(lbl,i){
   const nm=normalizeLabel(lbl);
   if(nm.includes('debloque')) return DCOL.debloque;
@@ -358,7 +358,7 @@ function wrapText(text,max){
 // segs : [{val,label,color,hatch?}] — centre : [ligne1, ligne2] sous le total
 function drawDonut(svgId,segs,total,centre){
   const el=$(svgId);
-  const W=520,CX=260,R1=84,R0=52;
+  const W=520,R1=88,R0=55;
   const START=-Math.PI/2,TAU=Math.PI*2,TOP_FROM=TAU*320/360;
   const somme=segs.reduce((t_,x)=>t_+x.val,0);
   if(somme<=0){el.innerHTML='';return;}
@@ -368,15 +368,25 @@ function drawDonut(svgId,segs,total,centre){
 
   const vis=segs.filter(x=>x.val>0);
   vis.forEach(x=>{
-    x.top=((x.am-START)%TAU+TAU)%TAU>=TOP_FROM;   // parts proches de 12 h : étiquettes en haut
+    x.top=((x.am-START)%TAU+TAU)%TAU>=TOP_FROM;   // parts proches de 12 h : étiquettes au-dessus
     x.right=x.top||Math.cos(x.am)>=0;
-    x.nameLines=wrapText(x.label,20);
-    x.h=23+14*x.nameLines.length;
   });
-  const pile=g=>g.reduce((t_,x)=>t_+x.h,0)+Math.max(0,g.length-1)*5+16;
+  // Pas d'étiquette à gauche : le donut se colle à gauche et les étiquettes disposent de toute la largeur
+  const CX=vis.some(x=>!x.right)?W/2:R1+16;
+
+  // Étiquette sur une ligne : nombre en gras + nom (qui passe à la ligne si besoin)
+  vis.forEach(x=>{
+    x.numTxt=fr(x.val);
+    x.numW=x.numTxt.length*10+8;
+    const lx=CX+(x.right?1:-1)*(R1+34);
+    const avail=x.right?W-lx-x.numW-6:lx-x.numW-6;
+    x.nameLines=wrapText(x.label,Math.max(14,Math.floor(avail/6.4)));
+    x.h=Math.max(26,12+14*x.nameLines.length);
+  });
+  const pile=g=>g.reduce((t_,x)=>t_+x.h,0)+Math.max(0,g.length-1)*4+10;
   const hautG=vis.filter(x=>x.top);
-  const CY=Math.max(R1+24,hautG.length?R1+8+pile(hautG):0);
-  const H=Math.max(CY+R1+24,pile(vis.filter(x=>x.right&&!x.top)),pile(vis.filter(x=>!x.right)));
+  const CY=Math.max(R1+14,hautG.length?R1+6+pile(hautG):0);
+  const H=Math.max(CY+R1+14,pile(vis.filter(x=>x.right&&!x.top)),pile(vis.filter(x=>!x.right)));
   el.setAttribute('viewBox',`0 0 ${W} ${H}`);
 
   const pt=(r,ang)=>[CX+r*Math.cos(ang),CY+r*Math.sin(ang)];
@@ -401,22 +411,22 @@ function drawDonut(svgId,segs,total,centre){
       +`<text x="${CX}" y="${CY+fs*0.12+16}" text-anchor="middle" font-size="10" letter-spacing="2" fill="${DC.sub}">${esc(centre[0])}</text>`
       +`<text x="${CX}" y="${CY+fs*0.12+29}" text-anchor="middle" font-size="10" letter-spacing="2" fill="${DC.sub}">${esc(centre[1])}</text>`;
 
-  // Étiquettes avec traits de repère
+  // Positions verticales des étiquettes
   vis.forEach(x=>{ x.y=CY+Math.sin(x.am)*(R1+20); });
   [true,false].forEach(side=>{
     const g=vis.filter(x=>x.right===side&&!x.top).sort((p_,q_)=>p_.y-q_.y);
     if(!g.length) return;
     g[0].y=Math.max(g[0].y,g[0].h/2+4);
-    for(let i=1;i<g.length;i++) g[i].y=Math.max(g[i].y,g[i-1].y+(g[i-1].h+g[i].h)/2+5);
+    for(let i=1;i<g.length;i++) g[i].y=Math.max(g[i].y,g[i-1].y+(g[i-1].h+g[i].h)/2+4);
     const last=g[g.length-1];
-    if(last.y+last.h/2>H-6){
-      last.y=H-6-last.h/2;
-      for(let i=g.length-2;i>=0;i--) g[i].y=Math.min(g[i].y,g[i+1].y-(g[i].h+g[i+1].h)/2-5);
+    if(last.y+last.h/2>H-4){
+      last.y=H-4-last.h/2;
+      for(let i=g.length-2;i>=0;i--) g[i].y=Math.min(g[i].y,g[i+1].y-(g[i].h+g[i+1].h)/2-4);
     }
   });
   // Groupe du haut : empilé au-dessus du donut, la part la plus à gauche en haut (pas de croisement)
-  let yb=CY-R1-10;
-  vis.filter(x=>x.top).sort((p_,q_)=>q_.am-p_.am).forEach(x=>{ x.y=yb-x.h/2; yb-=x.h+5; });
+  let yb=CY-R1-8;
+  vis.filter(x=>x.top).sort((p_,q_)=>q_.am-p_.am).forEach(x=>{ x.y=yb-x.h/2; yb-=x.h+4; });
 
   vis.forEach(x=>{
     const dir=x.right?1:-1;
@@ -426,9 +436,12 @@ function drawDonut(svgId,segs,total,centre){
                    :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(x.y)} ${f1(lx-dir*4)},${f1(x.y)}`;
     svg+=`<polyline points="${pts}" fill="none" stroke="${DC.ligne}" stroke-width="1"/>`;
     const anchor=x.right?'start':'end';
-    let ty=x.y-x.h/2+17;
-    svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="19" font-weight="800" fill="${DC.nombre}">${esc(fr(x.val))}</text>`;
-    x.nameLines.forEach(line=>{ ty+=14; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="12" font-weight="700" fill="${DC.nom}">${esc(line)}</text>`; });
+    const by=x.y-x.h/2+(x.h-14*x.nameLines.length)/2+10;   // ligne de base de la 1re ligne
+    svg+=`<text x="${f1(lx)}" y="${f1(by+3)}" text-anchor="${anchor}" font-size="19" font-weight="800" fill="${DC.nombre}">${esc(x.numTxt)}</text>`;
+    const nx=lx+dir*x.numW;
+    x.nameLines.forEach((line,k)=>{
+      svg+=`<text x="${f1(nx)}" y="${f1(by+14*k+3)}" text-anchor="${anchor}" font-size="12" font-weight="700" fill="${DC.nom}">${esc(line)}</text>`;
+    });
   });
   el.innerHTML=svg;
 }
