@@ -445,8 +445,9 @@ function drawDonut(svgId,segs,total,centre,grpLabel){
   };
 
   const hid='h_'+svgId;
-  let svg=`<defs><pattern id="${hid}" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
-    <rect width="9" height="9" fill="${DCOL.rouge}"/><rect width="3.5" height="9" fill="${DCOL.orange}"/></pattern></defs>`;
+  let svg=`<defs><pattern id="${hid}" patternUnits="userSpaceOnUse" width="14" height="14" patternTransform="rotate(45)">
+    <rect width="14" height="14" fill="${DCOL.rouge}"/><rect width="6" height="14" fill="${DCOL.orange}"/>
+    <rect x="6" width="1" height="14" fill="#fff"/><rect x="13" width="1" height="14" fill="#fff"/></pattern></defs>`;
 
   // les parts quasi complètes d'abord, pour ne pas recouvrir les petites
   [...vis].sort((p_,q_)=>(q_.a1-q_.a0)-(p_.a1-p_.a0)).filter(x=>x.a1-x.a0>=TAU-0.02).concat(vis.filter(x=>x.a1-x.a0<TAU-0.02)).forEach(x=>{
