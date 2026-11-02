@@ -380,7 +380,7 @@ function alignTitres(){
 }
 
 // segs : [{val,label,color,hatch?}] — centre : [ligne1, ligne2] sous le total
-function drawDonut(svgId,segs,total,centre){
+function drawDonut(svgId,segs,total,centre,grpLabel){
   const el=$(svgId);
   const W=520,R1=88,R0=55;
   const START=-Math.PI/2,TAU=Math.PI*2,TOP_FROM=TAU*320/360;
@@ -395,6 +395,15 @@ function drawDonut(svgId,segs,total,centre){
     x.top=((x.am-START)%TAU+TAU)%TAU>=TOP_FROM;   // parts proches de 12 h : étiquettes au-dessus
     x.right=x.top||Math.cos(x.am)>=0;
   });
+  // Parts bloquées regroupées visuellement (sans fusionner) : même côté, étiquettes contiguës
+  const grp=vis.filter(x=>x.grp), grpOn=grp.length>=2;
+  let grpA0=0,grpA1=0,grpTotal=0;
+  if(grpOn){
+    grpA0=Math.min(...grp.map(x=>x.a0)); grpA1=Math.max(...grp.map(x=>x.a1));
+    grpTotal=grp.reduce((t_,x)=>t_+x.val,0);
+    const mid=(grpA0+grpA1)/2, gTop=((mid-START)%TAU+TAU)%TAU>=TOP_FROM;
+    grp.forEach(x=>{x.top=gTop;x.right=gTop||Math.cos(mid)>=0;});
+  }
   // Pas d'étiquette à gauche : le donut se colle à gauche et les étiquettes disposent de toute la largeur
   const left=vis.some(x=>!x.right)||!!(donutShared&&donutShared.left);
   const CX=left?W/2:R1+16;
@@ -409,6 +418,11 @@ function drawDonut(svgId,segs,total,centre){
     x.nLines=x.nameLines.length+(x.sub?1:0);
     x.h=Math.max(26,12+14*x.nLines);
   });
+  if(grpOn){   // place pour l'en-tête « BLOQUÉES · total »
+    const gauche=!grp[0].top&&!grp[0].right;
+    const topM=grp.reduce((a,b)=>gauche?(b.am>a.am?b:a):(b.am<a.am?b:a));
+    topM.hdr=22; topM.h+=22;
+  }
   const pile=g=>g.reduce((t_,x)=>t_+x.h,0)+Math.max(0,g.length-1)*4+10;
   const hautG=vis.filter(x=>x.top);
   const CY0=Math.max(R1+14,hautG.length?R1+6+pile(hautG):0);
@@ -439,6 +453,9 @@ function drawDonut(svgId,segs,total,centre){
     svg+=`<path d="${sector(R0,R1,x.a0,x.a1)}" fill="${x.hatch?`url(#${hid})`:x.color}" stroke="#fff" stroke-width="2"/>`;
   });
 
+  // Arc extérieur : relie visuellement les parts bloquées
+  if(grpOn) svg+=`<path d="${sector(R1+3,R1+8,grpA0,grpA1)}" fill="#B71C1C"/>`;
+
   // Centre
   const tot=fr(total), fs=tot.length<=3?30:tot.length<=4?26:tot.length<=5?22:18;
   svg+=`<text x="${CX}" y="${CY+fs*0.12}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${DC.nombre}">${esc(tot)}</text>`
@@ -462,15 +479,26 @@ function drawDonut(svgId,segs,total,centre){
   let yb=CY-R1-8;
   vis.filter(x=>x.top).sort((p_,q_)=>q_.am-p_.am).forEach(x=>{ x.y=yb-x.h/2; yb-=x.h+4; });
 
+  // Cadre autour des étiquettes du groupe + en-tête avec le total
+  if(grpOn){
+    const dir=grp[0].right?1:-1, lx=CX+dir*(R1+34);
+    const wEst=Math.max(...grp.map(x=>x.numW+Math.max(...x.nameLines.map(l=>l.length*6.4),x.sub?x.sub.length*6.0:0)));
+    const gy0=Math.min(...grp.map(x=>x.y-x.h/2))-3, gy1=Math.max(...grp.map(x=>x.y+x.h/2))+3;
+    const xA=Math.max(4,dir>0?lx-8:lx-wEst-12), xB=Math.min(W-4,dir>0?lx+wEst+12:lx+8);
+    svg+=`<rect x="${f1(xA)}" y="${f1(gy0)}" width="${f1(xB-xA)}" height="${f1(gy1-gy0)}" rx="6" fill="#B71C1C" fill-opacity=".07" stroke="#B71C1C" stroke-opacity=".45" stroke-width="1.2"/>`;
+    svg+=`<text x="${f1(lx)}" y="${f1(gy0+15)}" text-anchor="${dir>0?'start':'end'}" font-size="11" font-weight="800" letter-spacing="1.5" fill="#B71C1C">${esc(grpLabel||'BLOQUÉS')} · ${esc(fr(grpTotal))}</text>`;
+  }
+
   vis.forEach(x=>{
     const dir=x.right?1:-1;
     const [x0,y0]=pt(R1+2,x.am);
     const ex=CX+dir*(R1+22), lx=CX+dir*(R1+34);
-    const pts=x.top?`${f1(x0)},${f1(y0)} ${f1(x0)},${f1(x.y)} ${f1(lx-4)},${f1(x.y)}`
-                   :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(x.y)} ${f1(lx-dir*4)},${f1(x.y)}`;
+    const hd=x.hdr||0, ly=x.y+hd/2;
+    const pts=x.top?`${f1(x0)},${f1(y0)} ${f1(x0)},${f1(ly)} ${f1(lx-4)},${f1(ly)}`
+                   :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(ly)} ${f1(lx-dir*4)},${f1(ly)}`;
     svg+=`<polyline points="${pts}" fill="none" stroke="${DC.ligne}" stroke-width="1"/>`;
     const anchor=x.right?'start':'end';
-    const by=x.y-x.h/2+(x.h-14*x.nLines)/2+10;   // ligne de base de la 1re ligne
+    const by=x.y-x.h/2+hd+(x.h-hd-14*x.nLines)/2+10;   // ligne de base de la 1re ligne
     svg+=`<text x="${f1(lx)}" y="${f1(by+3)}" text-anchor="${anchor}" font-size="19" font-weight="800" fill="${DC.nombre}">${esc(x.numTxt)}</text>`;
     const nx=lx+dir*x.numW;
     x.nameLines.forEach((line,k)=>{
@@ -514,9 +542,9 @@ function renderStatuts({m,mappings,key,svgId,noteId,emptyMsg,feminin,recours,tf,
       {v:both,  l:`${bloq(both)} avec une feuille de route et par recours`,    hatch:true},
       {v:soloR, l:`${bloq(soloR)}`, sub:'recours juridique',                  color:DCOL.rouge},
       {v:B-sum, l:`autres ${bloq(B-sum)}`,                                    color:DCOL.rouge},
-    ].filter(x=>x.v>0).forEach(x=>segs.push({val:x.v,label:cap(x.l),sub:x.sub,color:x.color,hatch:x.hatch}));
+    ].filter(x=>x.v>0).forEach(x=>segs.push({val:x.v,label:cap(x.l),sub:x.sub,color:x.color,hatch:x.hatch,grp:true}));
   });
-  drawDonut(svgId,segs,segs.reduce((t_,x)=>t_+x.val,0),centre);
+  drawDonut(svgId,segs,segs.reduce((t_,x)=>t_+x.val,0),centre,bloq(2).toUpperCase());
 }
 
 function renderTableauAnnees(m){
