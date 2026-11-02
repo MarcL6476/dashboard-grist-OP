@@ -144,17 +144,40 @@ function render(m){
     if(DR_.a1>t0) D_.am=(t0+DR_.a1)/2;
   }
 
+  // Groupe « bloqués » (feuille de route, cumul, recours) : regroupé visuellement, sans fusionner les parts
+  const GRP_KEYS=['BloquesFeuille','BloquesDouble','BloquesRecours'];
+  const grp=segs.filter(s=>GRP_KEYS.includes(s.k)&&s.val>0);
+  const grpOn=grp.length>=2;
+  let grpMid=0,grpA0=0,grpA1=0,grpTotal=0;
+  if(grpOn){
+    grp.forEach(s=>{s.grp=true;});
+    grpA0=Math.min(...grp.map(s=>s.a0)); grpA1=Math.max(...grp.map(s=>s.a1));
+    grpMid=(grpA0+grpA1)/2; grpTotal=grp.reduce((t_,s)=>t_+s.val,0);
+  }
+
   // Hauteur des étiquettes, puis hauteur du dessin : le côté le plus chargé décide
   const visibles=segs.filter(aEtiquette);
   visibles.forEach(s=>{
     s.top=((s.am-START)%TAU+TAU)%TAU>=TOP_FROM;
     s.right=s.top||Math.cos(s.am)>=0;
+    if(s.grp){   // tout le groupe du même côté, étiquettes contiguës
+      s.top=((grpMid-START)%TAU+TAU)%TAU>=TOP_FROM;
+      s.right=s.top||Math.cos(grpMid)>=0;
+    }
     s.nameLines=wrap(s.label,28);
     s.detailLines=s.detail?wrap(s.detail,34):[];
     s.dontLines=(s.dont||[]).flatMap(t=>wrap(t,34));
     s.lines=1+s.nameLines.length+(s.sub?1:0)+s.detailLines.length+s.dontLines.length+(s.extra?1:0);
     s.h=8+s.lines*17;
   });
+  if(grpOn){   // place pour l'en-tête « BLOQUÉS · total » au-dessus de la première étiquette du groupe
+    const mem=visibles.filter(s=>s.grp);
+    if(mem.length>=2){
+      const gauche=!mem[0].top&&!mem[0].right;
+      const topM=mem.reduce((a,b)=>gauche?(b.am>a.am?b:a):(b.am<a.am?b:a));
+      topM.hdr=24; topM.h+=24;
+    }
+  }
   const pile=g=>g.reduce((t,s)=>t+s.h,0)+Math.max(0,g.length-1)*6+16;
   const hautG=visibles.filter(s=>s.top);
   CY=Math.max(265,hautG.length?R1+8+pile(hautG):0);
@@ -194,6 +217,9 @@ function render(m){
     svg+=`<path d="${o}" fill="none" stroke="${C.tf}" stroke-width="5" stroke-linejoin="round"/>`;
   }
 
+  // Arc extérieur : relie visuellement les parts bloquées
+  if(grpOn) svg+=`<path d="${sector(R1+4,R1+10,grpA0,grpA1)}" fill="#B71C1C"/>`;
+
   // Centre
   svg+=`<text x="${CX}" y="${CY+4}" text-anchor="middle" font-size="46" font-weight="800" fill="${C.nombre}">${esc(fr(total))}</text>
         <text x="${CX}" y="${CY+28}" text-anchor="middle" font-size="14" letter-spacing="3" fill="${C.sub}">LOGEMENTS</text>
@@ -219,15 +245,34 @@ function render(m){
   let yb=CY-R1-10;
   items.filter(s=>s.top).sort((p,q)=>q.am-p.am).forEach(s=>{ s.y=yb-s.h/2; yb-=s.h+6; });
 
+  // Cadre autour des étiquettes du groupe + en-tête avec le total des bloqués
+  if(grpOn){
+    const mem=items.filter(s=>s.grp);
+    if(mem.length>=2){
+      const dir=mem[0].right?1:-1, lx=CX+dir*(R1+44);
+      const wEst=Math.max(...mem.map(s=>Math.max(
+        fr(s.labelVal??s.val).length*12,
+        ...s.nameLines.map(l=>l.length*7.8),
+        ...s.detailLines.map(l=>l.length*6.6),
+        ...(s.sub?[s.sub.length*7]:[]),
+        ...s.dontLines.map(l=>l.length*6.8))));
+      const gy0=Math.min(...mem.map(s=>s.y-s.h/2))-3, gy1=Math.max(...mem.map(s=>s.y+s.h/2))+3;
+      const xA=Math.max(4,dir>0?lx-8:lx-wEst-12), xB=Math.min(W-4,dir>0?lx+wEst+12:lx+8);
+      svg+=`<rect x="${f1(xA)}" y="${f1(gy0)}" width="${f1(xB-xA)}" height="${f1(gy1-gy0)}" rx="7" fill="#B71C1C" fill-opacity=".07" stroke="#B71C1C" stroke-opacity=".45" stroke-width="1.2"/>`;
+      svg+=`<text x="${f1(lx)}" y="${f1(gy0+17)}" text-anchor="${dir>0?'start':'end'}" font-size="12" font-weight="800" letter-spacing="1.5" fill="#B71C1C">BLOQUÉS · ${esc(fr(grpTotal))}</text>`;
+    }
+  }
+
   items.forEach(s=>{
     const dir=s.right?1:-1;
     const [x0,y0]=pt(R1+2,s.am);
     const ex=CX+dir*(R1+30), lx=CX+dir*(R1+44);
-    const pts=s.top?`${f1(x0)},${f1(y0)} ${f1(x0)},${f1(s.y)} ${f1(lx-4)},${f1(s.y)}`
-                   :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(s.y)} ${f1(lx-dir*4)},${f1(s.y)}`;
+    const ly=s.y+(s.hdr||0)/2;
+    const pts=s.top?`${f1(x0)},${f1(y0)} ${f1(x0)},${f1(ly)} ${f1(lx-4)},${f1(ly)}`
+                   :`${f1(x0)},${f1(y0)} ${f1(ex)},${f1(ly)} ${f1(lx-dir*4)},${f1(ly)}`;
     svg+=`<polyline points="${pts}" fill="none" stroke="${C.ligne}" stroke-width="1"/>`;
     const anchor=s.right?'start':'end';
-    let ty=s.y-s.h/2+19;
+    let ty=s.y-s.h/2+19+(s.hdr||0);
     svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="21" font-weight="800" fill="${C.nombre}">${esc(fr(s.labelVal??s.val))}</text>`;
     s.nameLines.forEach(line=>{ ty+=17; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="14" font-weight="700" fill="${C.nom}">${esc(line)}</text>`; });
     if(s.sub){ ty+=16; svg+=`<text x="${f1(lx)}" y="${f1(ty)}" text-anchor="${anchor}" font-size="13" fill="${C.sub}">${esc(s.sub)}</text>`; }
