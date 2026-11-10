@@ -32,6 +32,7 @@
   .popup-foncier  { --popup-bg: rgba(226, 246, 229, 0.92); --popup-titre: #1b7a2b; }
   .popup-pb-at    { --popup-bg: rgba(241, 230, 248, 0.92); --popup-titre: #6c3483; }
   .popup-pb-st    { --popup-bg: rgba(248, 228, 237, 0.92); --popup-titre: #8a2a53; }
+  .popup-alea     { --popup-bg: rgba(255, 255, 255, 0.92); --popup-titre: #333; }
 
   /* Popup compact (prospects) : épouse la largeur du texte */
   .popup-compact .maplibregl-popup-content { min-width: 0; padding: 4px 8px; font-size: 11px; line-height: 1.3; }
@@ -184,6 +185,18 @@ const HACHURE_MOINDRE = { tuile: 12, epaisseur: 1.5 };
 const IDS_FONCIER_ENJEU   = ["foncier-remplissage", "foncier-hachure", "foncier-contour"];
 const IDS_FONCIER_MOINDRE = ["foncier-moindre-remplissage", "foncier-moindre-hachure", "foncier-moindre-contour"];
 const IDS_CALQUES_FONCIER = [...IDS_FONCIER_ENJEU, ...IDS_FONCIER_MOINDRE];
+
+// --- Aléas (GeoJSON du département, calques paresseux) ---
+// Fichiers à déposer dans le dépôt dashboard-grist-OP, dossier "aleas/", en WGS84 (EPSG:4326).
+const DOSSIER_ALEAS = "aleas/";
+// Ordre = du plus bas (dessiné en premier) au plus haut. Le multirisque recouvre les autres : il reste dessous.
+const ALEAS = [
+  { cle: "multirisque",  fichier: "REGROUPE_MULTIRISQUE.geojson",  libelle: "Multirisque",          couleur: "#9E9E9E", opacite: 0.25 },
+  { cle: "inondation",   fichier: "REGROUPE_INONDATION.geojson",   libelle: "Inondation",           couleur: "#3D5AFE", opacite: 0.35 },
+  { cle: "mouv-terrain", fichier: "REGROUPE_MOUV_TERRAIN.geojson", libelle: "Mouvement de terrain", couleur: "#E67E22", opacite: 0.35 },
+  { cle: "avalanche",    fichier: "REGROUPE_AVALANCHE.geojson",    libelle: "Avalanche",            couleur: "#00E5FF", opacite: 0.35 }
+];
+const MAX_PROPRIETES_POPUP_ALEA = 6;
 
 // --- Couleurs des marqueurs OP selon la colonne STATUT ---
 // Tout autre statut (ou statut vide) est affiché comme AGREE.
@@ -568,6 +581,100 @@ function majMarqueurs(records) {
 }
 
 // ============================================================
+// Aléas : 4 GeoJSON statiques (calques paresseux)
+// ============================================================
+const idRemplissageAlea = a => "alea-" + a.cle + "-remplissage";
+const idContourAlea     = a => "alea-" + a.cle + "-contour";
+
+// Contrôle de projection : première coordonnée de la première entité
+function geojsonEnWGS84(geojson) {
+  const f = (geojson.features || []).find(x => x.geometry && x.geometry.coordinates);
+  if (!f) return true;
+  let c = f.geometry.coordinates;
+  while (Array.isArray(c) && Array.isArray(c[0])) c = c[0];
+  return Math.abs(c[0]) <= 180 && Math.abs(c[1]) <= 90;
+}
+
+// Calque devant lequel insérer un aléa : sous les aléas plus hauts déjà chargés,
+// sinon sous le foncier, sinon sous les prospects.
+function calqueAvantAlea(index) {
+  for (let j = index + 1; j < ALEAS.length; j++) {
+    if (map.getLayer(idRemplissageAlea(ALEAS[j]))) return idRemplissageAlea(ALEAS[j]);
+  }
+  return map.getLayer("foncier-moindre-remplissage") ? "foncier-moindre-remplissage" : "prospects-cercles";
+}
+
+function contenuPopupAleas(resultats) {
+  return resultats.map(({ alea, props }) => {
+    const lignes = Object.entries(props)
+      .filter(([k, v]) => v !== null && v !== "" && typeof v !== "object")
+      .slice(0, MAX_PROPRIETES_POPUP_ALEA)
+      .map(([k, v]) => `<br><span class="popup-commune">${echapperHtml(k)} : ${echapperHtml(v)}</span>`)
+      .join("");
+    return `<b>${echapperHtml(alea.libelle)}</b>${lignes}`;
+  }).join(`<hr style="border:0;border-top:1px solid rgba(0,0,0,0.15);margin:6px 0">`);
+}
+
+function initialiserAleas() {
+  ALEAS.forEach((alea, index) => {
+    declarerCalqueParesseux("alea-" + alea.cle, async () => {
+      const note = document.getElementById("aleas-note");
+      try {
+        const rep = await fetch(DOSSIER_ALEAS + alea.fichier);
+        if (!rep.ok) throw new Error(`fichier introuvable (HTTP ${rep.status})`);
+        const geojson = await rep.json();
+        if (!geojsonEnWGS84(geojson)) throw new Error("coordonnées hors WGS84 (reprojeter en EPSG:4326)");
+        const avant = calqueAvantAlea(index);
+        map.addSource("alea-" + alea.cle, { type: "geojson", data: geojson });
+        map.addLayer({
+          id: idRemplissageAlea(alea), type: "fill", source: "alea-" + alea.cle,
+          paint: { "fill-color": alea.couleur, "fill-opacity": alea.opacite },
+          layout: { visibility: "none" }
+        }, avant);
+        map.addLayer({
+          id: idContourAlea(alea), type: "line", source: "alea-" + alea.cle,
+          paint: { "line-color": alea.couleur, "line-width": 1.2, "line-opacity": 0.9 },
+          layout: { visibility: "none" }
+        }, avant);
+        if (note) note.textContent = "";
+      } catch (err) {
+        if (note) note.textContent = `⚠ ${alea.libelle} : ${err.message}`;
+        throw err;
+      }
+    });
+
+    document.getElementById("toggle-alea-" + alea.cle).addEventListener("change", async e => {
+      const box = e.target, nom = "alea-" + alea.cle;
+      const ids = [idRemplissageAlea(alea), idContourAlea(alea)];
+      if (box.checked) {
+        box.disabled = true;
+        await activerCalqueParesseux(nom);
+        box.disabled = false;
+        if (!calquesParesseux[nom].charge) { box.checked = false; return; }
+        if (box.checked) ids.forEach(id => map.setLayoutProperty(id, "visibility", "visible"));
+      } else if (calquesParesseux[nom].charge) {
+        ids.forEach(id => map.setLayoutProperty(id, "visibility", "none"));
+      }
+    });
+  });
+
+  // Un seul popup pour tous les aléas sous le clic ; les marqueurs et le foncier gardent la priorité.
+  map.on("click", e => {
+    const prioritaires = ["op-cercles", "prospects-cercles", ...SERIES_PB.map(s => s.cle + "-cercles"),
+                          "foncier-remplissage", "foncier-moindre-remplissage"].filter(id => map.getLayer(id));
+    if (prioritaires.length && map.queryRenderedFeatures(e.point, { layers: prioritaires }).length) return;
+    const resultats = [];
+    ALEAS.forEach(alea => {
+      const id = idRemplissageAlea(alea);
+      if (!map.getLayer(id) || map.getLayoutProperty(id, "visibility") !== "visible") return;
+      const f = map.queryRenderedFeatures(e.point, { layers: [id] })[0];
+      if (f) resultats.push({ alea, props: f.properties });
+    });
+    if (resultats.length) ouvrirPopup(e.lngLat, contenuPopupAleas(resultats), "popup-alea");
+  });
+}
+
+// ============================================================
 // Initialisation de la carte
 // ============================================================
 async function initCarte() {
@@ -807,6 +914,9 @@ async function initCarte() {
         <div id="foncier-note" style="margin-left:4px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
         <label><input type="checkbox" id="toggle-prospects" checked> <span class="legende-swatch" style="background:rgba(255,255,255,0.5);border:3px solid ${COULEUR_PROSPECTS};width:9px;height:9px"></span> Prospects 2026</label>
         ${SERIES_PB.map(serie => `<label><input type="checkbox" id="toggle-${serie.cle}" checked> <span class="legende-swatch" style="background:${serie.couleur};border-radius:50%;width:10px;height:10px"></span> ${serie.legende || serie.libelle}</label>`).join("")}
+        <div class="groupe-titre">Aléas</div>
+        ${ALEAS.map(a => `<label><input type="checkbox" id="toggle-alea-${a.cle}"> <span class="legende-swatch" style="background:${a.couleur};opacity:0.7;border-color:${a.couleur}"></span> ${a.libelle}</label>`).join("")}
+        <div id="aleas-note" style="margin-left:4px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
         <div class="groupe-titre">Opérations</div>
         <div class="legende-item">${pastilleOP("AGREE")}Agréée</div>
         <div class="legende-item">${pastilleOP("PREVI")}Prévisionnelle 2026/28</div>
@@ -860,6 +970,9 @@ async function initCarte() {
       }
     });
   });
+
+  // Aléas : 4 calques GeoJSON paresseux (cases à cocher dans la légende)
+  initialiserAleas();
 }
 
 function assurerCarte() {
