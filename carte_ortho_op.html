@@ -620,9 +620,17 @@ function initialiserAleas() {
     declarerCalqueParesseux("alea-" + alea.cle, async () => {
       const note = document.getElementById("aleas-note");
       try {
-        const rep = await fetch(DOSSIER_ALEAS + alea.fichier);
+        const rep = await fetch(DOSSIER_ALEAS + alea.fichier + "?v=" + Date.now(), { cache: "no-store" });
         if (!rep.ok) throw new Error(`fichier introuvable (HTTP ${rep.status})`);
-        const geojson = await rep.json();
+        const texte = await rep.text();
+        console.info(`${alea.fichier} : ${texte.length} caractères reçus`);
+        if (!texte.trim()) throw new Error("fichier reçu vide");
+        let geojson;
+        try {
+          geojson = JSON.parse(texte);
+        } catch (e) {
+          throw new Error(`JSON invalide (${texte.length} caractères reçus, fin : « ${texte.slice(-40)} »)`);
+        }
         if (!geojsonEnWGS84(geojson)) throw new Error("coordonnées hors WGS84 (reprojeter en EPSG:4326)");
         const avant = calqueAvantAlea(index);
         map.addSource("alea-" + alea.cle, { type: "geojson", data: geojson });
