@@ -26,13 +26,14 @@
   .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--popup-bg, rgba(255, 255, 255, 0.88)); }
   .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--popup-bg, rgba(255, 255, 255, 0.88)); }
 
-  .popup-agree    { --popup-bg: rgba(227, 237, 249, 0.92); --popup-titre: #1a5fb4; }
-  .popup-previ    { --popup-bg: rgba(255, 246, 204, 0.92); --popup-titre: #7a5c00; }
-  .popup-prospect { --popup-bg: rgba(253, 230, 229, 0.92); --popup-titre: #b71c1c; }
-  .popup-foncier  { --popup-bg: rgba(226, 246, 229, 0.92); --popup-titre: #1b7a2b; }
-  .popup-pb-at    { --popup-bg: rgba(241, 230, 248, 0.92); --popup-titre: #6c3483; }
-  .popup-pb-st    { --popup-bg: rgba(248, 228, 237, 0.92); --popup-titre: #8a2a53; }
-  .popup-alea     { --popup-bg: rgba(255, 255, 255, 0.92); --popup-titre: #333; }
+  .popup-agree      { --popup-bg: rgba(227, 237, 249, 0.92); --popup-titre: #1a5fb4; }
+  .popup-previ      { --popup-bg: rgba(255, 246, 204, 0.92); --popup-titre: #7a5c00; }
+  .popup-previ-2029 { --popup-bg: rgba(255, 232, 206, 0.92); --popup-titre: #8a4a00; }
+  .popup-prospect   { --popup-bg: rgba(253, 230, 229, 0.92); --popup-titre: #b71c1c; }
+  .popup-foncier    { --popup-bg: rgba(226, 246, 229, 0.92); --popup-titre: #1b7a2b; }
+  .popup-pb-at      { --popup-bg: rgba(241, 230, 248, 0.92); --popup-titre: #6c3483; }
+  .popup-pb-st      { --popup-bg: rgba(248, 228, 237, 0.92); --popup-titre: #8a2a53; }
+  .popup-alea       { --popup-bg: rgba(255, 255, 255, 0.92); --popup-titre: #333; }
 
   /* Popup compact (prospects) : épouse la largeur du texte */
   .popup-compact .maplibregl-popup-content { min-width: 0; padding: 4px 8px; font-size: 11px; line-height: 1.3; }
@@ -93,7 +94,7 @@ const COL_LON     = "longitude";
 const COL_TITRE   = "Libelle";              // libellé opération
 const COL_ADRESSE = "Adresse_normalisee";
 const COL_COMMUNE = "Commune";
-const COL_STATUT  = "Statut";               // statut de l'opération : PREVI ou AGREE (colonne STATUT)
+const COL_STATUT  = "Statut";               // statut : AGREE, PREVI, PREVI 2026-2028 ou PREVI 2029-2031
 
 const CENTRE_DEFAUT = [-1.10, 43.38]; // MapLibre attend [lon, lat]
 const ZOOM_DEFAUT   = 10;
@@ -199,14 +200,23 @@ const ALEAS = [
 const MAX_PROPRIETES_POPUP_ALEA = 6;
 
 // --- Couleurs des marqueurs OP selon la colonne STATUT ---
+// AGREE                    -> bleu
+// PREVI, PREVI 2026-2028   -> jaune (PREVI sera supprimé à terme)
+// PREVI 2029-2031          -> orange pâle
 // Tout autre statut (ou statut vide) est affiché comme AGREE.
 const COULEURS_STATUT_OP = {
-  AGREE: { normal: "#1a5fb4", intense: "#0d3b73", classePopup: "popup-agree" },
-  PREVI: { normal: "#FFD21F", intense: "#F5B800", classePopup: "popup-previ" }
+  AGREE:      { normal: "#1a5fb4", intense: "#0d3b73", classePopup: "popup-agree" },
+  PREVI_2026: { normal: "#FFD21F", intense: "#F5B800", classePopup: "popup-previ" },
+  PREVI_2029: { normal: "#FFB366", intense: "#F58A1F", classePopup: "popup-previ-2029" }
 };
+// Insensible à la casse, aux accents et au format (tiret, espaces).
+function cleStatut(statut) {
+  const s = normaliserTexte(statut);
+  if (!s.startsWith("previ")) return "AGREE";
+  return s.includes("2029") ? "PREVI_2029" : "PREVI_2026";
+}
 function couleursPourStatut(statut) {
-  const s = String(statut || "").trim().toUpperCase();
-  return COULEURS_STATUT_OP[s] || COULEURS_STATUT_OP.AGREE;
+  return COULEURS_STATUT_OP[cleStatut(statut)];
 }
 // ============================================================
 
@@ -906,7 +916,7 @@ async function initCarte() {
   });
 
   // --- Contrôle foncier / prospects / opérations + légende (haut droit) ---
-  const pastilleOP = statut => `<span class="legende-pastille" style="background:${COULEURS_STATUT_OP[statut].normal}"></span>`;
+  const pastilleOP = cle => `<span class="legende-pastille" style="background:${COULEURS_STATUT_OP[cle].normal}"></span>`;
   class ControleLegende {
     onAdd(mapInstance) {
       this._map = mapInstance;
@@ -927,7 +937,8 @@ async function initCarte() {
         <div id="aleas-note" style="margin-left:4px;max-width:220px;font-size:10px;color:#c01c28;white-space:normal"></div>
         <div class="groupe-titre">Opérations</div>
         <div class="legende-item">${pastilleOP("AGREE")}Agréée</div>
-        <div class="legende-item">${pastilleOP("PREVI")}Prévisionnelle 2026/28</div>
+        <div class="legende-item">${pastilleOP("PREVI_2026")}Prévisionnelle 2026/28</div>
+        <div class="legende-item">${pastilleOP("PREVI_2029")}Prévisionnelle 2029/31</div>
         <label><input type="checkbox" id="toggle-noms"> Noms des opérations</label>
       `;
       return this._div;
@@ -1000,7 +1011,7 @@ grist.ready({
     { name: COL_TITRE,   title: "Titre",     type: "Any", optional: true },
     { name: COL_ADRESSE, title: "Adresse",   type: "Any", optional: true },
     { name: COL_COMMUNE, title: "Commune",   type: "Any", optional: true },
-    { name: COL_STATUT,  title: "Statut (PREVI / AGREE)", type: "Any", optional: true }
+    { name: COL_STATUT,  title: "Statut (AGREE / PREVI / PREVI 2026-2028 / PREVI 2029-2031)", type: "Any", optional: true }
   ]
 });
 
